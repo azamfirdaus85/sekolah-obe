@@ -13,6 +13,20 @@ const handleDb = (res, e) => {
   return res.status(500).json({ error: 'Gagal simpan: ' + m });
 };
 
+// HELPER BARU: insert yang bener di Turso + Lokal
+async function insertReturnId(sql, args = []) {
+  if (db.isTurso) {
+    // Turso harus pakai RETURNING id, lastInsertRowid nya gak bisa dipercaya
+    const r = await db.client.execute({ sql: sql + ' RETURNING id', args });
+    const row = r.rows[0];
+    const id = row ? Number(row.id) : 0;
+    return { lastInsertRowid: id, lastInsertRowId: id, id };
+  }
+  const info = await db.prepare(sql).run(...args);
+  const id = info.lastInsertRowid ?? info.lastInsertRowId ?? 0;
+  return { lastInsertRowid: Number(id), lastInsertRowId: Number(id), id: Number(id) };
+}
+
 router.get('/stats', async (req, res) => {
   try {
     const n = async (sql) => (await db.prepare(sql).get()).n;
@@ -46,12 +60,22 @@ router.post('/users', async (req, res) => {
   if (!['admin', 'guru', 'siswa', 'kepsek'].includes(r)) return bad(res, 'Peran tidak valid.');
   if (password.length < 8) return bad(res, 'Password minimal 8 karakter.');
   try {
-    const info = await db.prepare('INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)').run(username, bcrypt.hashSync(password, 10), name, r);
+    const info = await insertReturnId('INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)', [username, bcrypt.hashSync(password, 10), name, r]);
     if (r === 'siswa') {
       const nis = str(req.body.nis, 30) || username;
       const classIdRaw = req.body.class_id;
-      const classId = classIdRaw ? Number(classIdRaw) : null;
-      await db.prepare('INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)').run(info.lastInsertRowid, nis, isNaN(classId) ? null : classId);
+      // FIX: kalau frontend kirim "" / "null" / nama kelas, jadikan null / angka
+      let classId = null;
+      if (classIdRaw !== undefined && classIdRaw !== null && classIdRaw !== '' && classIdRaw !== 'null') {
+        const num = Number(classIdRaw);
+        if (!isNaN(num) && num > 0) classId = num;
+      }
+      // Validasi kelasnya beneran ada
+      if (classId) {
+        const cek = await db.prepare('SELECT id FROM classes WHERE id = ?').get(classId);
+        if (!cek) return bad(res, 'Kelas tidak ditemukan, refresh halaman dulu.');
+      }
+      await insertReturnId('INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)', [info.lastInsertRowid, nis, classId]);
     }
     res.status(201).json({ id: info.lastInsertRowid });
   } catch (e) { return handleDb(res, e); }
@@ -89,7 +113,7 @@ router.get('/classes', async (req, res) => { try { res.json(await db.prepare(`SE
 router.post('/classes', async (req, res) => {
   const name = str(req.body.name, 50);
   if (!name) return bad(res, 'Nama kelas wajib diisi.');
-  try { const info = await db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run(name, str(req.body.year, 20) || null); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
+  try { const info = await insertReturnId('INSERT INTO classes(name,year) VALUES(?,?)', [name, str(req.body.year, 20) || null]); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
 });
 
 router.delete('/classes/:id', async (req, res) => { try { await db.prepare('DELETE FROM classes WHERE id = ?').run(req.params.id); res.json({ ok: true }); } catch (e) { return handleDb(res, e); } });
@@ -100,7 +124,7 @@ router.post('/subjects', async (req, res) => {
   const code = str(req.body.code, 20).toUpperCase();
   const name = str(req.body.name, 100);
   if (!code || !name) return bad(res, 'Kode dan nama mapel wajib diisi.');
-  try { const info = await db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run(code, name); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
+  try { const info = await insertReturnId('INSERT INTO subjects(code,name) VALUES(?,?)', [code, name]); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
 });
 
 router.delete('/subjects/:id', async (req, res) => { try { await db.prepare('DELETE FROM subjects WHERE id = ?').run(req.params.id); res.json({ ok: true }); } catch (e) { return handleDb(res, e); } });
@@ -111,7 +135,7 @@ router.post('/teaching', async (req, res) => {
   const subject = Number(req.body.subject_id), cls = Number(req.body.class_id), teacher = Number(req.body.teacher_id);
   const semester = str(req.body.semester, 40);
   if (!subject || !cls || !teacher || !semester) return bad(res, 'Mapel, kelas, guru, dan semester wajib diisi.');
-  try { const t = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'guru'").get(teacher); if (!t) return bad(res, 'Pengajar harus berperan Guru.'); const info = await db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(subject, cls, teacher, semester); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
+  try { const t = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'guru'").get(teacher); if (!t) return bad(res, 'Pengajar harus berperan Guru.'); const info = await insertReturnId('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)', [subject, cls, teacher, semester]); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
 });
 
 router.delete('/teaching/:id', async (req, res) => { try { await db.prepare('DELETE FROM teaching WHERE id = ?').run(req.params.id); res.json({ ok: true }); } catch (e) { return handleDb(res, e); } });
@@ -119,7 +143,7 @@ router.delete('/teaching/:id', async (req, res) => { try { await db.prepare('DEL
 router.post('/announcements', async (req, res) => {
   const title = str(req.body.title, 150), body = str(req.body.body, 2000);
   if (!title || !body) return bad(res, 'Judul dan isi wajib diisi.');
-  try { const info = await db.prepare('INSERT INTO announcements(title,body) VALUES(?,?)').run(title, body); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
+  try { const info = await insertReturnId('INSERT INTO announcements(title,body) VALUES(?,?)', [title, body]); res.status(201).json({ id: info.lastInsertRowid }); } catch (e) { return handleDb(res, e); }
 });
 
 router.delete('/announcements/:id', async (req, res) => { try { await db.prepare('DELETE FROM announcements WHERE id = ?').run(req.params.id); res.json({ ok: true }); } catch (e) { return handleDb(res, e); } });

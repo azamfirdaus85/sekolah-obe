@@ -2,9 +2,9 @@ const db = require('./db');
 
 const KKM = 75;
 
-function analyze(teachingId) {
+async function analyze(teachingId) {
   // Informasi kelas ajar
-  const teaching = db.prepare(`
+  const teaching = await db.prepare(`
     SELECT t.id, t.semester, t.class_id, t.subject_id,
            s.name AS subject_name, s.code AS subject_code,
            c.name AS class_name, u.name AS teacher_name
@@ -18,7 +18,7 @@ function analyze(teachingId) {
   if (!teaching) return null;
 
   // Daftar siswa
-  const students = db.prepare(`
+  const students = await db.prepare(`
     SELECT st.id AS student_id, st.nis, u.name
     FROM students st
     JOIN users u ON u.id = st.user_id
@@ -26,7 +26,7 @@ function analyze(teachingId) {
     ORDER BY u.name
   `).all(teaching.class_id);
 
-  const studentsNorm = students.map(s => ({
+  const studentsNorm = (students || []).map(s => ({
     id: s.student_id,
     student_id: s.student_id,
     nis: s.nis,
@@ -34,7 +34,7 @@ function analyze(teachingId) {
   }));
 
   // Daftar penilaian
-  const assessments = db.prepare(`
+  const assessments = await db.prepare(`
     SELECT a.id, a.name, a.weight, a.max_score,
            a.outcome_id, o.code AS outcome_code
     FROM assessments a
@@ -43,7 +43,7 @@ function analyze(teachingId) {
   `).all(teachingId);
 
   // Data nilai
-  const scores = db.prepare(`
+  const scores = await db.prepare(`
     SELECT sc.assessment_id, sc.student_id, sc.score
     FROM scores sc
     JOIN assessments a ON a.id = sc.assessment_id
@@ -119,7 +119,7 @@ function analyze(teachingId) {
     : 0;
 
   // Analisis capaian pembelajaran
-  const outcomes = db.prepare(`
+  const outcomes = await db.prepare(`
     SELECT id, code, description
     FROM outcomes
     WHERE subject_id = ?
