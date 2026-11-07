@@ -1,14 +1,20 @@
-const Database = require('better-sqlite3');
+let Database;
+try {
+  const { DatabaseSync } = require('node:sqlite');
+  Database = DatabaseSync;
+} catch (e) {
+  throw e;
+}
 const path = require('path');
 const fs = require('fs');
-
 const dbFile = process.env.DB_FILE || path.join(__dirname, 'data', 'sekolah.db');
-fs.mkdirSync(path.dirname(dbFile), { recursive: true });
-
-const db = new Database(dbFile);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
+const finalDbPath = process.env.VERCEL ? '/tmp/sekolah.db' : dbFile;
+if (!process.env.VERCEL) {
+  fs.mkdirSync(path.dirname(finalDbPath), { recursive: true });
+}
+const db = new Database(finalDbPath);
+db.exec(`PRAGMA journal_mode = WAL;`);
+db.exec(`PRAGMA foreign_keys = ON;`);
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
