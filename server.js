@@ -27,5 +27,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Terjadi kesalahan pada server' });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SIAKAD OBE Sekolah berjalan di http://localhost:${PORT}`));
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`SIAKAD OBE Sekolah berjalan di http://localhost:${PORT}`));
+}
+module.exports = app;
