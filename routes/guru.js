@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
-const { auth, role } = require('../middleware');
+const { auth, role } = require('../authMiddleware');
 const { analyze } = require('../analysis');
 
 router.use(auth, role('guru'));
