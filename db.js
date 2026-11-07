@@ -7,95 +7,59 @@ try {
 }
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+
 const dbFile = process.env.DB_FILE || path.join(__dirname, 'data', 'sekolah.db');
 const finalDbPath = process.env.VERCEL ? '/tmp/sekolah.db' : dbFile;
+
 if (!process.env.VERCEL) {
   fs.mkdirSync(path.dirname(finalDbPath), { recursive: true });
 }
+
 const db = new Database(finalDbPath);
 db.exec(`PRAGMA journal_mode = WAL;`);
 db.exec(`PRAGMA foreign_keys = ON;`);
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT UNIQUE NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  name          TEXT NOT NULL,
-  role          TEXT NOT NULL CHECK (role IN ('admin','guru','siswa','kepsek')),
-  must_change   INTEGER NOT NULL DEFAULT 0,
-  active        INTEGER NOT NULL DEFAULT 1,
-  created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin','guru','siswa','kepsek')),
+  must_change INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS classes (
-  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT UNIQUE NOT NULL,
   year TEXT
 );
-
-CREATE TABLE IF NOT EXISTS students (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id  INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  nis      TEXT UNIQUE NOT NULL,
-  class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS subjects (
-  id   INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL
-);
-
--- Capaian Pembelajaran (CP) per mata pelajaran
-CREATE TABLE IF NOT EXISTS outcomes (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  subject_id  INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-  code        TEXT NOT NULL,
-  description TEXT NOT NULL,
-  UNIQUE (subject_id, code)
-);
-
--- Kelas ajar = mapel + kelas + guru + semester
-CREATE TABLE IF NOT EXISTS teaching (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
-  class_id   INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-  teacher_id INTEGER NOT NULL REFERENCES users(id),
-  semester   TEXT NOT NULL,
-  UNIQUE (subject_id, class_id, semester)
-);
-
-CREATE TABLE IF NOT EXISTS assessments (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  teaching_id INTEGER NOT NULL REFERENCES teaching(id) ON DELETE CASCADE,
-  outcome_id  INTEGER REFERENCES outcomes(id) ON DELETE SET NULL,
-  name        TEXT NOT NULL,
-  weight      REAL NOT NULL DEFAULT 1 CHECK (weight > 0),
-  max_score   REAL NOT NULL DEFAULT 100 CHECK (max_score > 0)
-);
-
-CREATE TABLE IF NOT EXISTS scores (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
-  student_id    INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-  score         REAL NOT NULL,
-  UNIQUE (assessment_id, student_id)
-);
-
-CREATE TABLE IF NOT EXISTS reflections (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  teaching_id INTEGER NOT NULL REFERENCES teaching(id) ON DELETE CASCADE,
-  content     TEXT NOT NULL,
-  follow_up   TEXT,
-  created_at  TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS announcements (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  title      TEXT NOT NULL,
-  body       TEXT NOT NULL,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
 `);
+
+// --- AUTO SEED UNTUK VERCEL (karena /tmp kehapus terus) ---
+try {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  if (count === 0) {
+    console.log('Database kosong, seeding admin default...');
+    const hash = (p) => bcrypt.hashSync(p, 10);
+    const addUser = db.prepare('INSERT INTO users(username, password_hash, name, role) VALUES(?,?,?,?)');
+    
+    addUser.run('admin', hash('admin123'), 'Administrator Sekolah', 'admin');
+    addUser.run('kepsek', hash('kepsek123'), 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
+    addUser.run('guru1', hash('guru123'), 'Siti Rahma, S.Pd.', 'guru');
+    addUser.run('guru2', hash('guru123'), 'Budi Hartono, S.Kom.', 'guru');
+    
+    try {
+      const kelas = db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run('X RPL 1', '2026/2027');
+      console.log('Seed kelas id', kelas.lastInsertRowid);
+    } catch(e) {}
+    
+    console.log('Seed selesai: admin/admin123 bisa dipakai');
+  }
+} catch (e) {
+  console.log('Auto seed error:', e.message);
+}
 
 module.exports = db;
