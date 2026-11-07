@@ -1,10 +1,7 @@
 (() => {
   'use strict';
-
   const app = document.getElementById('app');
   let me = null;
-
-  /* ================= Helpers ================= */
   const esc = (v) =>
     String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (n) => (n == null ? '-' : Number(n).toFixed(1));
@@ -20,7 +17,7 @@
     }
     const res = await fetch('/api' + path, opt);
     let data = null;
-    try { data = await res.json(); } catch (e) { /* kosong */ }
+    try { data = await res.json(); } catch (e) {}
     if (res.status === 401 && path !== '/login' && path !== '/me') {
       me = null;
       renderLogin('Sesi berakhir, silakan masuk lagi.');
@@ -58,22 +55,35 @@
       : `<div class="cell-bar"><span>${fmt(v)}</span><div class="bar ${levelClass(v, kkm)}"><i style="width:${Math.max(0, Math.min(100, v))}%"></i></div></div>`;
   const pill = (passed) =>
     passed == null ? '<span class="pill na">Belum ada nilai</span>' : passed ? '<span class="pill ok">Tuntas</span>' : '<span class="pill low">Belum tuntas</span>';
-
-  const opts = (list, valKey, labelFn, placeholder) =>
+    const opts = (list, valKey, labelFn, placeholder) =>
     (placeholder ? `<option value="">${esc(placeholder)}</option>` : '') +
     list.map((x) => `<option value="${esc(x[valKey])}">${esc(labelFn(x))}</option>`).join('');
-
   const delBtn = (url) => `<button class="btn sm danger" data-action="del" data-url="${esc(url)}">Hapus</button>`;
 
-  /* ================= Menu ================= */
   const MENUS = {
-    admin: [['dash', 'Dashboard'], ['users', 'Pengguna'], ['classes', 'Kelas'], ['subjects', 'Mata Pelajaran'], ['teaching', 'Kelas Ajar'], ['news', 'Pengumuman'], ['monitor', 'Monitoring']],
-    guru: [['dash', 'Dashboard'], ['mycls', 'Kelas Ajar Saya']],
-    siswa: [['dash', 'Dashboard'], ['report', 'Nilai & Capaian']],
-    kepsek: [['dash', 'Dashboard'], ['monitor', 'Monitoring Capaian']]
+    admin: [
+      ['dash', '🏠 Dashboard'],
+      ['users', '👥 Pengguna'],
+      ['classes', '🏫 Kelas'],
+      ['subjects', '📚 Mata Pelajaran'],
+      ['teaching', '👩‍🏫 Kelas Ajar'],
+      ['news', '📢 Pengumuman'],
+      ['monitor', '📊 Monitoring']
+    ],
+    guru: [
+      ['dash', '🏠 Dashboard'],
+      ['mycls', '📚 Kelas Ajar Saya']
+    ],
+    siswa: [
+      ['dash', '🏠 Dashboard'],
+      ['report', '📈 Nilai & Capaian']
+    ],
+    kepsek: [
+      ['dash', '🏠 Dashboard'],
+      ['monitor', '📊 Monitoring Capaian']
+    ]
   };
 
-  /* ================= Login ================= */
   function renderLogin(msg = '') {
     document.title = 'Masuk - SIAKAD OBE Sekolah';
     app.innerHTML = `
@@ -94,9 +104,9 @@
             <h2>Masuk ke Sistem</h2>
             <p class="muted small" style="margin-bottom:1rem">Siswa memakai NIS sebagai username.</p>
             <form class="form" data-form="login">
-              <div class="field"><label for="u">Username</label><input id="u" name="username" autocomplete="username" required></div>
-              <div class="field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
-              <p class="form-msg" role="alert">${esc(msg)}</p>
+              <div class="field"><label>Username</label><input name="username" required></div>
+              <div class="field"><label>Password</label><input name="password" type="password" required></div>
+              <p class="form-msg">${esc(msg)}</p>
               <button class="btn full" type="submit">Masuk</button>
             </form>
           </div>
@@ -113,36 +123,38 @@
       <form class="form" data-form="changePw" style="margin-top:1rem">
         <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
         <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
-        <p class="form-msg" role="alert"></p>
+        <p class="form-msg"></p>
         <button class="btn full" type="submit">Simpan</button>
       </form></div></section></div>`;
   }
 
-  /* ================= Layout ================= */
   function layout(content, active) {
-    const menu = MENUS[me.role]
-      .map(([k, l]) => `<a href="#/${k}" class="${active === k ? 'on' : ''}">${l}</a>`)
-      .join('');
+    const menu = MENUS[me.role].map(([k, l]) => `<a href="#/${k}" class="${active === k ? 'on' : ''}">${l}</a>`).join('');
     return `
       <div class="shell">
         <aside class="side" id="side">
-          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE</span></div>
+          <div class="brand">
+            <span class="brand-mark">S</span>
+            <div><span>SIAKAD OBE</span><small style="display:block;font-weight:400;color:#94a3b8;font-size:.75rem">Sekolah • OBE System</small></div>
+          </div>
           <nav>${menu}</nav>
+          <div style="margin-top:auto;background:rgba(255,255,255,.06);border-radius:14px;padding:1rem">
+            <p style="font-size:.8rem;color:#fff;font-weight:700">Butuh Bantuan?</p>
+            <p style="font-size:.75rem;color:#94a3b8">Hubungi Admin Sekolah untuk reset password.</p>
+          </div>
         </aside>
         <div class="main">
           <header class="top">
-            <button class="burger" data-action="toggleSide" aria-label="Menu">&#9776;</button>
+            <button class="burger" data-action="toggleSide">☰</button>
             <span class="who">${esc(me.name)}<em>${roleLabel(me.role)}</em></span>
-            <button class="btn sm ghost" data-action="pw">Ganti Password</button>
-            <button class="btn sm" data-action="logout">Keluar</button>
+            <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
+            <button class="btn sm" data-action="logout">Keluar →</button>
           </header>
           <main class="content">${content}</main>
         </div>
       </div>`;
   }
-
-  /* ================= Analisis (dipakai guru & kepsek) ================= */
-  function analysisHtml(a) {
+    function analysisHtml(a) {
     const head = `<h2>${esc(a.teaching.subject_name)} - ${esc(a.teaching.class_name)}</h2>
       <p class="muted small">Guru: ${esc(a.teaching.teacher_name)} &bull; ${esc(a.teaching.semester)} &bull; KKM ${a.kkm} &bull; Rata-rata kelas: <b>${fmt(a.classAvg)}</b></p>`;
     const cp = a.outcomes.length
@@ -169,23 +181,38 @@
       : '<p class="muted">Belum ada refleksi.</p>';
   }
 
-  /* ================= Views ================= */
   async function dash() {
     const news = await api('/announcements');
     let stats = '';
     if (me.role === 'admin') {
       const s = await api('/admin/stats');
-      const c = (l, v) => `<div class="card stat"><b>${v}</b><span class="muted">${l}</span></div>`;
-      stats = `<div class="cards">${c('Siswa', s.siswa)}${c('Guru', s.guru)}${c('Kelas', s.kelas)}${c('Mata Pelajaran', s.mapel)}${c('Kelas Ajar', s.kelasAjar)}</div>`;
+      const c = (icon, l, v, color) => `
+        <div class="card stat" style="border-left:4px solid ${color}">
+          <div style="display:flex;justify-content:space-between;align-items:start">
+            <div><b style="font-size:2.4rem">${v}</b><span class="muted" style="text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;font-weight:700">${l}</span></div>
+            <span style="font-size:2rem;background:${color}1a;width:52px;height:52px;display:grid;place-items:center;border-radius:14px">${icon}</span>
+          </div>
+        </div>`;
+      stats = `<div class="cards">
+        ${c('👥','Siswa', s.siswa, '#6366f1')}
+        ${c('👩‍🏫','Guru', s.guru, '#10b981')}
+        ${c('🏫','Kelas', s.kelas, '#f59e0b')}
+        ${c('📚','Mata Pelajaran', s.mapel, '#8b5cf6')}
+        ${c('🎓','Kelas Ajar', s.kelasAjar, '#ef4444')}
+      </div>`;
     }
     const list = news.length
       ? news.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p></div>`).join('')
       : '<p class="muted">Belum ada pengumuman.</p>';
-    return `<div><h1>Halo, ${esc(me.name)}</h1><p class="muted">Selamat datang di SIAKAD OBE Sekolah.</p></div>${stats}
-      <div class="card"><h2>Pengumuman</h2>${list}</div>`;
+    return `
+      <div style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
+        <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
+        <span style="font-size:3.5rem;opacity:.9">🎓</span>
+      </div>
+      ${stats}
+      <div class="card"><h2>📢 Pengumuman</h2>${list}</div>`;
   }
 
-  /* ---- Admin ---- */
   async function usersView() {
     const [users, classes] = await Promise.all([api('/admin/users'), api('/admin/classes')]);
     const rows = users.map((u) => `<tr>
@@ -220,8 +247,7 @@
       <div class="card"><table><thead><tr><th>Kelas</th><th>Tahun</th><th class="num">Siswa</th><th></th></tr></thead><tbody>${list
         .map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.year || '')}</td><td class="num">${c.students}</td><td><div class="actions">${delBtn('/admin/classes/' + c.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
   }
-
-  async function subjectsView() {
+    async function subjectsView() {
     const list = await api('/admin/subjects');
     return `<h1>Mata Pelajaran</h1>
       <div class="card"><form class="form inline" data-form="post" data-url="/admin/subjects">
@@ -233,9 +259,7 @@
   }
 
   async function teachingAdminView() {
-    const [list, subjects, classes, users] = await Promise.all([
-      api('/admin/teaching'), api('/admin/subjects'), api('/admin/classes'), api('/admin/users?role=guru')
-    ]);
+    const [list, subjects, classes, users] = await Promise.all([api('/admin/teaching'), api('/admin/subjects'), api('/admin/classes'), api('/admin/users?role=guru')]);
     return `<h1>Kelas Ajar</h1><p class="muted">Hubungkan mata pelajaran, kelas, dan guru pengampu pada satu semester.</p>
       <div class="card"><form class="form inline" data-form="post" data-url="/admin/teaching">
         <div class="field"><label>Mata pelajaran</label><select name="subject_id" required>${opts(subjects, 'id', (s) => s.name, 'Pilih')}</select></div>
@@ -257,12 +281,10 @@
       <div class="card">${list.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p>${delBtn('/admin/announcements/' + n.id)}</div>`).join('') || '<p class="muted">Belum ada pengumuman.</p>'}</div>`;
   }
 
-  /* ---- Guru ---- */
   async function myClasses() {
     const list = await api('/guru/teaching');
     const cards = list.length
-      ? list.map((t) => `<a class="card" href="#/class/${t.id}/cp"><h3>${esc(t.subject_name)}</h3>
-          <p class="muted">${esc(t.class_name)} &bull; ${t.students} siswa</p><p class="muted small">${esc(t.semester)}</p></a>`).join('')
+      ? list.map((t) => `<a class="card" href="#/class/${t.id}/cp"><h3>${esc(t.subject_name)}</h3><p class="muted">${esc(t.class_name)} &bull; ${t.students} siswa</p><p class="muted small">${esc(t.semester)}</p></a>`).join('')
       : '<p class="muted">Belum ada kelas ajar. Hubungi admin.</p>';
     return `<h1>Kelas Ajar Saya</h1><div class="grid2">${cards}</div>`;
   }
@@ -274,92 +296,64 @@
     const tabs = [['cp', 'CP'], ['asesmen', 'Penilaian'], ['input', 'Input Nilai'], ['analisis', 'Analisis'], ['refleksi', 'Refleksi']];
     const nav = tabs.map(([k, l]) => `<a href="#/class/${id}/${k}" class="${tab === k ? 'on' : ''}">${l}</a>`).join('');
     const body = await (TABS[tab] || TABS.cp)(t, extra);
-    return `<div><h1>${esc(t.subject_name)} - ${esc(t.class_name)}</h1><p class="muted">${esc(t.semester)}</p></div>
-      <div class="tabs">${nav}</div>${body}`;
+    return `<div><h1>${esc(t.subject_name)} - ${esc(t.class_name)}</h1><p class="muted">${esc(t.semester)}</p></div><div class="tabs">${nav}</div>${body}`;
   }
 
   const TABS = {
     async cp(t) {
       const list = await api(`/guru/teaching/${t.id}/outcomes`);
-      return `<div class="card"><h2>Tambah Capaian Pembelajaran</h2>
-        <form class="form inline" data-form="post" data-url="/guru/teaching/${t.id}/outcomes">
-          <div class="field"><label>Kode</label><input name="code" placeholder="CP1" required></div>
-          <div class="field" style="grid-column:span 2"><label>Deskripsi</label><input name="description" required></div>
-          <button class="btn" type="submit">Tambah</button></form></div>
-        <div class="card"><table><thead><tr><th>Kode</th><th>Deskripsi</th><th></th></tr></thead><tbody>${list
-          .map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td><div class="actions">${delBtn(`/guru/teaching/${t.id}/outcomes/${o.id}`)}</div></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Belum ada CP.</td></tr>'}</tbody></table></div>`;
+      return `<div class="card"><h2>Tambah CP</h2><form class="form inline" data-form="post" data-url="/guru/teaching/${t.id}/outcomes">
+        <div class="field"><label>Kode</label><input name="code" placeholder="CP1" required></div>
+        <div class="field" style="grid-column:span 2"><label>Deskripsi</label><input name="description" required></div>
+        <button class="btn" type="submit">Tambah</button></form></div>
+        <div class="card"><table><thead><tr><th>Kode</th><th>Deskripsi</th><th></th></tr></thead><tbody>${list.map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td><div class="actions">${delBtn(`/guru/teaching/${t.id}/outcomes/${o.id}`)}</div></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Belum ada CP.</td></tr>'}</tbody></table></div>`;
     },
     async asesmen(t) {
       const [list, cps] = await Promise.all([api(`/guru/teaching/${t.id}/assessments`), api(`/guru/teaching/${t.id}/outcomes`)]);
-      return `<div class="card"><h2>Tambah Asesmen</h2>
-        <form class="form inline" data-form="post" data-url="/guru/teaching/${t.id}/assessments">
-          <div class="field"><label>Nama</label><input name="name" placeholder="Ulangan Harian 1" required></div>
-          <div class="field"><label>CP yang diukur</label><select name="outcome_id">${opts(cps, 'id', (c) => c.code + ' - ' + c.description, 'Tanpa CP')}</select></div>
-          <div class="field"><label>Bobot</label><input name="weight" type="number" step="0.1" min="0.1" value="1"></div>
-          <div class="field"><label>Nilai maks.</label><input name="max_score" type="number" min="1" value="100"></div>
-          <button class="btn" type="submit">Tambah</button></form></div>
-        <div class="card"><table><thead><tr><th>Asesmen</th><th>CP</th><th class="num">Bobot</th><th class="num">Maks.</th><th class="num">Terisi</th><th></th></tr></thead><tbody>${list
-          .map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(a.outcome_code || '-')}</td><td class="num">${a.weight}</td><td class="num">${a.max_score}</td><td class="num">${a.filled}</td>
-            <td><div class="actions"><a class="btn sm ghost" href="#/class/${t.id}/input/${a.id}">Isi nilai</a>${delBtn('/guru/assessments/' + a.id)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada asesmen.</td></tr>'}</tbody></table></div>`;
+      return `<div class="card"><h2>Tambah Asesmen</h2><form class="form inline" data-form="post" data-url="/guru/teaching/${t.id}/assessments">
+        <div class="field"><label>Nama</label><input name="name" required></div>
+        <div class="field"><label>CP</label><select name="outcome_id">${opts(cps, 'id', (c) => c.code + ' - ' + c.description, 'Tanpa CP')}</select></div>
+        <div class="field"><label>Bobot</label><input name="weight" type="number" step="0.1" value="1"></div>
+        <div class="field"><label>Maks.</label><input name="max_score" type="number" value="100"></div>
+        <button class="btn" type="submit">Tambah</button></form></div>
+        <div class="card"><table><thead><tr><th>Asesmen</th><th>CP</th><th class="num">Bobot</th><th class="num">Maks.</th><th class="num">Terisi</th><th></th></tr></thead><tbody>${list.map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(a.outcome_code || '-')}</td><td class="num">${a.weight}</td><td class="num">${a.max_score}</td><td class="num">${a.filled}</td><td><div class="actions"><a class="btn sm ghost" href="#/class/${t.id}/input/${a.id}">Isi nilai</a>${delBtn('/guru/assessments/' + a.id)}</div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Belum ada asesmen.</td></tr>'}</tbody></table></div>`;
     },
     async input(t, aid) {
       const list = await api(`/guru/teaching/${t.id}/assessments`);
-      const select = `<div class="card"><div class="field"><label>Pilih asesmen</label>
-        <select data-change="pickAssess" data-tid="${t.id}">${opts(list, 'id', (a) => a.name, '-- Pilih --').replace(`value="${esc(aid)}"`, `value="${esc(aid)}" selected`)}</select></div></div>`;
+      const select = `<div class="card"><div class="field"><label>Pilih asesmen</label><select data-change="pickAssess" data-tid="${t.id}">${opts(list, 'id', (a) => a.name, '-- Pilih --').replace(`value="${esc(aid)}"`, `value="${esc(aid)}" selected`)}</select></div></div>`;
       if (!aid) return select + '<p class="muted">Pilih asesmen untuk mengisi nilai.</p>';
       const data = await api(`/guru/assessments/${aid}/scores`);
-      const rows = data.rows.map((r) => `<tr><td>${esc(r.nis)}</td><td>${esc(r.name)}</td>
-        <td class="num"><input class="score" type="number" step="0.1" min="0" max="${data.assessment.max_score}" data-sid="${r.student_id}" value="${r.score ?? ''}"></td></tr>`).join('');
-      return select + `<div class="card"><h2>${esc(data.assessment.name)} <span class="muted small">(maks. ${data.assessment.max_score})</span></h2>
-        <form data-form="saveScores" data-aid="${aid}"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Nilai</th></tr></thead><tbody>${rows}</tbody></table>
-        <p class="form-msg" role="alert"></p><button class="btn" type="submit">Simpan Nilai</button></form></div>`;
+      const rows = data.rows.map((r) => `<tr><td>${esc(r.nis)}</td><td>${esc(r.name)}</td><td class="num"><input class="score" type="number" min="0" max="${data.assessment.max_score}" data-sid="${r.student_id}" value="${r.score ?? ''}"></td></tr>`).join('');
+      return select + `<div class="card"><h2>${esc(data.assessment.name)}</h2><form data-form="saveScores" data-aid="${aid}"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Nilai</th></tr></thead><tbody>${rows}</tbody></table><button class="btn" type="submit">Simpan Nilai</button></form></div>`;
     },
-    async analisis(t) {
-      return analysisHtml(await api(`/guru/teaching/${t.id}/analysis`));
-    },
+    async analisis(t) { return analysisHtml(await api(`/guru/teaching/${t.id}/analysis`)); },
     async refleksi(t) {
       const list = await api(`/guru/teaching/${t.id}/reflections`);
-      return `<div class="card"><h2>Tulis Refleksi Pembelajaran</h2>
-        <form class="form" data-form="post" data-url="/guru/teaching/${t.id}/reflections">
-          <div class="field"><label>Refleksi (apa yang berjalan baik / kurang?)</label><textarea name="content" required></textarea></div>
-          <div class="field"><label>Rencana tindak lanjut</label><textarea name="follow_up"></textarea></div>
-          <div><button class="btn" type="submit">Simpan</button></div></form></div>
+      return `<div class="card"><h2>Tulis Refleksi</h2><form class="form" data-form="post" data-url="/guru/teaching/${t.id}/reflections">
+        <div class="field"><label>Refleksi</label><textarea name="content" required></textarea></div>
+        <div class="field"><label>Tindak lanjut</label><textarea name="follow_up"></textarea></div><div><button class="btn" type="submit">Simpan</button></div></form></div>
         <div class="card"><h2>Riwayat Refleksi</h2>${reflectionsHtml(list, true, t.id)}</div>`;
     }
   };
 
-  /* ---- Siswa ---- */
   async function reportView() {
     const r = await api('/siswa/report');
-    const head = `<h1>Nilai &amp; Capaian</h1><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
-    if (!r.subjects.length) return head + '<div class="card"><p class="muted">Belum ada mata pelajaran untuk kelas Anda.</p></div>';
-    return head + r.subjects.map((s) => `<div class="card">
-      <h2>${esc(s.subject)} <span class="muted small">- ${esc(s.teacher)} &bull; ${esc(s.semester)}</span></h2>
-      <p style="margin-bottom:.8rem">Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
-      <table><thead><tr><th>CP</th><th>Deskripsi</th><th>Capaian</th></tr></thead><tbody>${s.outcomes
-        .map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td>${bar(o.score, r.kkm)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Belum ada CP.</td></tr>'}</tbody></table>
-      <details style="margin-top:.8rem"><summary class="muted small" style="cursor:pointer">Rincian nilai asesmen</summary>
-      <table><thead><tr><th>Asesmen</th><th>CP</th><th class="num">Bobot</th><th class="num">Nilai</th></tr></thead><tbody>${s.assessments
-        .map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(a.outcome_code || '-')}</td><td class="num">${a.weight}</td><td class="num">${a.score == null ? '-' : a.score + ' / ' + a.max_score}</td></tr>`).join('')}</tbody></table></details></div>`).join('');
+    const head = `<h1>Nilai & Capaian</h1><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
+    if (!r.subjects.length) return head + '<div class="card"><p class="muted">Belum ada mata pelajaran.</p></div>';
+    return head + r.subjects.map((s) => `<div class="card"><h2>${esc(s.subject)} - ${esc(s.teacher)}</h2><p>Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
+      <table><thead><tr><th>CP</th><th>Deskripsi</th><th>Capaian</th></tr></thead><tbody>${s.outcomes.map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td>${bar(o.score, r.kkm)}</td></tr>`).join('')}</tbody></table></div>`).join('');
   }
 
-  /* ---- Monitoring (kepsek & admin) ---- */
   async function monitorView() {
     const d = await api('/monitor/overview');
-    const rows = d.items.map((i) => `<tr>
-      <td><b>${esc(i.subject)}</b></td><td>${esc(i.class_name)}</td><td>${esc(i.teacher)}</td><td class="num">${i.students}</td>
-      <td>${bar(i.classAvg, d.kkm)}</td>
-      <td>${i.outcomes.map((o) => `<span class="pill ${o.passRate == null ? 'na' : o.passRate >= 75 ? 'ok' : 'low'}" title="Rata-rata ${fmt(o.avg)}">${esc(o.code)}: ${o.passRate == null ? '-' : Math.round(o.passRate) + '%'}</span>`).join(' ')}</td>
-      <td><a class="btn sm ghost" href="#/detail/${i.id}">Detail</a></td></tr>`).join('');
-    return `<h1>Monitoring Capaian Pembelajaran</h1>
-      <p class="muted">Seluruh kelas ajar. KKM ${d.kkm}. Label CP menunjukkan persentase siswa yang tuntas (hijau bila &ge; 75%).</p>
-      <div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th class="num">Siswa</th><th>Rata-rata</th><th>Ketuntasan CP</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">Belum ada kelas ajar.</td></tr>'}</tbody></table></div>`;
+    const rows = d.items.map((i) => `<tr><td><b>${esc(i.subject)}</b></td><td>${esc(i.class_name)}</td><td>${esc(i.teacher)}</td><td class="num">${i.students}</td><td>${bar(i.classAvg, d.kkm)}</td>
+      <td>${i.outcomes.map((o) => `<span class="pill ${o.passRate >= 75 ? 'ok' : 'low'}">${esc(o.code)}: ${Math.round(o.passRate || 0)}%</span>`).join(' ')}</td><td><a class="btn sm ghost" href="#/detail/${i.id}">Detail</a></td></tr>`).join('');
+    return `<h1>Monitoring Capaian</h1><div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th class="num">Siswa</th><th>Rata-rata</th><th>Ketuntasan</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   async function detailView(id) {
     const [a, refl] = await Promise.all([api(`/monitor/teaching/${id}/analysis`), api(`/monitor/teaching/${id}/reflections`)]);
-    return `<p><a href="#/monitor" class="btn sm ghost">&larr; Kembali</a></p>${analysisHtml(a)}
-      <div class="card"><h2>Refleksi Pembelajaran</h2>${reflectionsHtml(refl, false, id)}</div>`;
+    return `<p><a href="#/monitor" class="btn sm ghost">&larr; Kembali</a></p>${analysisHtml(a)}<div class="card"><h2>Refleksi</h2>${reflectionsHtml(refl, false, id)}</div>`;
   }
 
   const VIEWS = {
@@ -369,7 +363,6 @@
     kepsek: { dash, monitor: monitorView, detail: detailView }
   };
 
-  /* ================= Router ================= */
   async function route() {
     closeModal();
     if (!me) return renderLogin();
@@ -378,7 +371,6 @@
     const fn = VIEWS[me.role][view];
     if (!fn) { location.hash = '#/dash'; return; }
     const active = view === 'class' ? 'mycls' : view === 'detail' ? 'monitor' : view;
-    document.title = 'SIAKAD OBE Sekolah';
     try {
       const html = await fn(id, tab, extra);
       app.innerHTML = layout(html, active);
@@ -388,34 +380,18 @@
     }
   }
 
-  /* ================= Form handlers ================= */
   const FORMS = {
     async login(data, f) {
-      const msg = f.querySelector('.form-msg');
-      msg.textContent = '';
-      try {
-        const r = await api('/login', 'POST', data);
-        me = r.user;
-        location.hash = '#/dash';
-        route();
-      } catch (e) { msg.textContent = e.message; }
+      const msg = f.querySelector('.form-msg'); msg.textContent = '';
+      try { const r = await api('/login', 'POST', data); me = r.user; location.hash = '#/dash'; route(); }
+      catch (e) { msg.textContent = e.message; }
     },
     async changePw(data, f) {
-      const msg = f.querySelector('.form-msg');
-      msg.textContent = '';
-      try {
-        await api('/change-password', 'POST', data);
-        me.must_change = false;
-        closeModal();
-        toast('Password berhasil diganti');
-        route();
-      } catch (e) { msg.textContent = e.message; }
+      const msg = f.querySelector('.form-msg'); msg.textContent = '';
+      try { await api('/change-password', 'POST', data); me.must_change = false; closeModal(); toast('Password berhasil diganti'); route(); }
+      catch (e) { msg.textContent = e.message; }
     },
-    async post(data, f) {
-      await api(f.dataset.url, 'POST', data);
-      toast('Data tersimpan');
-      route();
-    },
+    async post(data, f) { await api(f.dataset.url, 'POST', data); toast('Data tersimpan'); route(); },
     async saveScores(data, f) {
       const scores = [...f.querySelectorAll('input.score')].map((i) => ({ student_id: Number(i.dataset.sid), score: i.value === '' ? null : Number(i.value) }));
       await api(`/guru/assessments/${f.dataset.aid}/scores`, 'PUT', { scores });
@@ -424,72 +400,39 @@
   };
 
   const ACTIONS = {
-    async logout() {
-      await api('/logout', 'POST', {});
-      me = null;
-      location.hash = '';
-      renderLogin();
-    },
+    async logout() { await api('/logout', 'POST', {}); me = null; location.hash = ''; renderLogin(); },
     toggleSide() { document.getElementById('side').classList.toggle('open'); },
     closeModal,
     pw() {
-      openModal(`<h2>Ganti Password</h2>
-        <form class="form" data-form="changePw">
-          <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
-          <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
-          <p class="form-msg" role="alert"></p>
-          <div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Simpan</button></div>
-        </form>`);
+      openModal(`<h2>Ganti Password</h2><form class="form" data-form="changePw">
+        <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
+        <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
+        <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Simpan</button></div></form>`);
     },
-    async del(el) {
-      if (!confirm('Hapus data ini? Tindakan tidak dapat dibatalkan.')) return;
-      await api(el.dataset.url, 'DELETE');
-      toast('Data dihapus');
-      route();
-    },
+    async del(el) { if (!confirm('Hapus data ini?')) return; await api(el.dataset.url, 'DELETE'); toast('Data dihapus'); route(); },
     async resetPw(el) {
-      const pw = prompt('Password baru untuk pengguna ini (min. 8 karakter). Pengguna wajib menggantinya saat login:');
-      if (!pw) return;
-      await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw });
-      toast('Password direset');
+      const pw = prompt('Password baru (min. 8 karakter):'); if (!pw) return;
+      await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw }); toast('Password direset');
     },
-    async toggleActive(el) {
-      await api('/admin/users/' + el.dataset.id, 'PUT', { active: el.dataset.active === '1' });
-      route();
-    }
+    async toggleActive(el) { await api('/admin/users/' + el.dataset.id, 'PUT', { active: el.dataset.active === '1' }); route(); }
   };
 
-  const CHANGES = {
-    pickAssess(el) { location.hash = `#/class/${el.dataset.tid}/input/${el.value}`; }
-  };
+  const CHANGES = { pickAssess(el) { location.hash = `#/class/${el.dataset.tid}/input/${el.value}`; } };
 
   document.addEventListener('submit', async (e) => {
-    const f = e.target.closest('form[data-form]');
-    if (!f) return;
-    e.preventDefault();
-    try { await FORMS[f.dataset.form](Object.fromEntries(new FormData(f)), f); }
-    catch (err) { toast(err.message, false); }
+    const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault();
+    try { await FORMS[f.dataset.form](Object.fromEntries(new FormData(f)), f); } catch (err) { toast(err.message, false); }
   });
   document.addEventListener('click', async (e) => {
-    const el = e.target.closest('[data-action]');
-    if (!el) return;
-    try { await ACTIONS[el.dataset.action](el, e); }
-    catch (err) { toast(err.message, false); }
+    const el = e.target.closest('[data-action]'); if (!el) return;
+    try { await ACTIONS[el.dataset.action](el, e); } catch (err) { toast(err.message, false); }
   });
   document.addEventListener('change', (e) => {
-    const el = e.target.closest('[data-change]');
-    if (el) CHANGES[el.dataset.change](el);
+    const el = e.target.closest('[data-change]'); if (el) CHANGES[el.dataset.change](el);
   });
   window.addEventListener('hashchange', route);
-
-  /* ================= Init ================= */
   (async function init() {
-    try {
-      const r = await api('/me');
-      me = r.user;
-      route();
-    } catch (e) {
-      if (!me) renderLogin();
-    }
+    try { const r = await api('/me'); me = r.user; route(); }
+    catch (e) { if (!me) renderLogin(); }
   })();
 })();
