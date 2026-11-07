@@ -56,6 +56,34 @@ CREATE TABLE IF NOT EXISTS announcements (
   body TEXT NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS outcomes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  description TEXT NOT NULL,
+  UNIQUE(subject_id, code)
+);
+CREATE TABLE IF NOT EXISTS assessments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  teaching_id INTEGER NOT NULL REFERENCES teaching(id) ON DELETE CASCADE,
+  outcome_id INTEGER REFERENCES outcomes(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  weight REAL NOT NULL DEFAULT 1,
+  max_score REAL NOT NULL DEFAULT 100
+);
+CREATE TABLE IF NOT EXISTS scores (
+  assessment_id INTEGER NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  score REAL NOT NULL,
+  PRIMARY KEY (assessment_id, student_id)
+);
+CREATE TABLE IF NOT EXISTS reflections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  teaching_id INTEGER NOT NULL REFERENCES teaching(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  follow_up TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // --- AUTO SEED ---
@@ -69,13 +97,13 @@ try {
     addUser.run('kepsek', hash('kepsek123'), 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
     const g1 = addUser.run('guru1', hash('guru123'), 'Siti Rahma, S.Pd.', 'guru').lastInsertRowid;
     const g2 = addUser.run('guru2', hash('guru123'), 'Budi Hartono, S.Kom.', 'guru').lastInsertRowid;
-
     const kelasId = db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run('X RPL 1', '2026/2027').lastInsertRowid;
     const s1 = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('INF', 'Informatika').lastInsertRowid;
     const s2 = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('MTK', 'Matematika').lastInsertRowid;
     db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(s1, kelasId, g1, 'Ganjil 2026/2027');
     db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(s2, kelasId, g2, 'Ganjil 2026/2027');
     db.prepare('INSERT INTO announcements(title,body) VALUES(?,?)').run('Selamat Datang', 'Selamat datang di SIAKAD OBE Sekolah');
+    db.prepare('INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)').run(s1, 'CP-1', 'Memahami konsep dasar informatika');
     console.log('Seed selesai');
   }
 } catch (e) { console.log('Auto seed error:', e.message); }
