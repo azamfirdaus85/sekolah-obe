@@ -2,80 +2,124 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 
-const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
-if (count > 0) {
-  console.log('Database sudah berisi data. Hapus folder data/ bila ingin mengulang seed.');
-  process.exit(0);
-}
+(async () => {
+  const client = db._client || db;
+  const isTurso = db._isTurso;
 
-const hash = (p) => bcrypt.hashSync(p, 10);
+  // Fungsi helper biar jalan di Turso & Lokal
+  const exec = async (sql, params = []) => {
+    if (isTurso) {
+      const res = await db._client.execute({ sql, args: params });
+      return res;
+    } else {
+      return db.prepare(sql).get(...params) || db.prepare(sql).run(...params);
+    }
+  };
 
-const run = db.transaction(() => {
-  const addUser = db.prepare('INSERT INTO users(username,password_hash,name,role) VALUES(?,?,?,?)');
+  const getCount = async () => {
+    if (isTurso) {
+      const res = await db._client.execute('SELECT COUNT(*) AS n FROM users');
+      return res.rows[0]?.n || 0;
+    } else {
+      const row = db.prepare('SELECT COUNT(*) AS n FROM users').get();
+      return row ? row.n : 0;
+    }
+  };
 
-  addUser.run('admin', hash('admin123'), 'Administrator Sekolah', 'admin');
-  addUser.run('kepsek', hash('kepsek123'), 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
-  const g1 = addUser.run('guru1', hash('guru123'), 'Siti Rahma, S.Pd.', 'guru').lastInsertRowid;
-  const g2 = addUser.run('guru2', hash('guru123'), 'Budi Hartono, S.Kom.', 'guru').lastInsertRowid;
+  const count = await getCount();
+  if (count > 0) {
+    console.log('Database sudah berisi data. Seed dibatalkan.');
+    process.exit(0);
+  }
 
-  const kelas = db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run('X RPL 1', '2026/2027').lastInsertRowid;
+  const hash = (p) => bcrypt.hashSync(p, 10);
+
+  const insertUser = async (username, pass, name, role) => {
+    if (isTurso) {
+      const res = await db._client.execute({
+        sql: 'INSERT INTO users(username,password_hash,name,role) VALUES(?,?,?,?)',
+        args: [username, hash(pass), name, role]
+      });
+      return Number(res.lastInsertRowId);
+    } else {
+      return db.prepare('INSERT INTO users(username,password_hash,name,role) VALUES(?,?,?,?)').run(username, hash(pass), name, role).lastInsertRowid;
+    }
+  };
+
+  const adminId = await insertUser('admin', 'admin123', 'Administrator Sekolah', 'admin');
+  const kepsekId = await insertUser('kepsek', 'kepsek123', 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
+  const g1 = await insertUser('guru1', 'guru123', 'Siti Rahma, S.Pd.', 'guru');
+  const g2 = await insertUser('guru2', 'guru123', 'Budi Hartono, S.Kom.', 'guru');
+
+  let kelasId;
+  if (isTurso) {
+    const r = await db._client.execute({ sql: 'INSERT INTO classes(name,year) VALUES(?,?)', args: ['X RPL 1', '2026/2027'] });
+    kelasId = Number(r.lastInsertRowId);
+  } else {
+    kelasId = db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run('X RPL 1', '2026/2027').lastInsertRowid;
+  }
 
   const names = ['Andi Pratama', 'Bunga Lestari', 'Citra Dewi', 'Dimas Saputra', 'Eka Wulandari', 'Fajar Nugroho'];
-  const studentIds = names.map((n, i) => {
+  const studentIds = [];
+  for (let i = 0; i < names.length; i++) {
     const nis = '202600' + (i + 1);
-    const uid = addUser.run(nis, hash('siswa123'), n, 'siswa').lastInsertRowid;
-    return db.prepare('INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)').run(uid, nis, kelas).lastInsertRowid;
-  });
+    const uid = await insertUser(nis, 'siswa123', names[i], 'siswa');
+    if (isTurso) {
+      const r = await db._client.execute({ sql: 'INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)', args: [uid, nis, kelasId] });
+      studentIds.push(Number(r.lastInsertRowId));
+    } else {
+      const sid = db.prepare('INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)').run(uid, nis, kelasId).lastInsertRowid;
+      studentIds.push(sid);
+    }
+  }
 
-  const addSubject = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)');
-  const mtk = addSubject.run('MTK', 'Matematika').lastInsertRowid;
-  const pweb = addSubject.run('PWEB', 'Pemrograman Web').lastInsertRowid;
+  let mtk, pweb;
+  if (isTurso) {
+    mtk = Number((await db._client.execute({ sql: 'INSERT INTO subjects(code,name) VALUES(?,?)', args: ['MTK', 'Matematika'] })).lastInsertRowId);
+    pweb = Number((await db._client.execute({ sql: 'INSERT INTO subjects(code,name) VALUES(?,?)', args: ['PWEB', 'Pemrograman Web'] })).lastInsertRowId);
+  } else {
+    mtk = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('MTK', 'Matematika').lastInsertRowid;
+    pweb = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('PWEB', 'Pemrograman Web').lastInsertRowid;
+  }
 
-  const addCP = db.prepare('INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)');
-  const mtkCP = [
-    addCP.run(mtk, 'CP1', 'Memahami konsep aljabar dan fungsi').lastInsertRowid,
-    addCP.run(mtk, 'CP2', 'Menyelesaikan masalah geometri dan trigonometri').lastInsertRowid
-  ];
-  const pwebCP = [
-    addCP.run(pweb, 'CP1', 'Membuat struktur halaman dengan HTML dan CSS').lastInsertRowid,
-    addCP.run(pweb, 'CP2', 'Membuat interaksi dengan JavaScript').lastInsertRowid,
-    addCP.run(pweb, 'CP3', 'Mengelola data dengan database').lastInsertRowid
-  ];
+  const addOutcome = async (subject_id, code, desc) => {
+    if (isTurso) return Number((await db._client.execute({ sql: 'INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)', args: [subject_id, code, desc] })).lastInsertRowId);
+    return db.prepare('INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)').run(subject_id, code, desc).lastInsertRowid;
+  };
+
+  const mtkCP = [await addOutcome(mtk, 'CP1', 'Memahami konsep aljabar'), await addOutcome(mtk, 'CP2', 'Menyelesaikan masalah geometri')];
+  const pwebCP = [await addOutcome(pweb, 'CP1', 'Membuat struktur HTML/CSS'), await addOutcome(pweb, 'CP2', 'Interaksi JavaScript'), await addOutcome(pweb, 'CP3', 'Mengelola data database')];
+
+  const addTeach = async (sid, cid, tid, sem) => {
+    if (isTurso) return Number((await db._client.execute({ sql: 'INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)', args: [sid, cid, tid, sem] })).lastInsertRowId);
+    return db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(sid, cid, tid, sem).lastInsertRowid;
+  };
 
   const sem = 'Ganjil 2026/2027';
-  const addTeach = db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)');
-  const t1 = addTeach.run(mtk, kelas, g1, sem).lastInsertRowid;
-  const t2 = addTeach.run(pweb, kelas, g2, sem).lastInsertRowid;
+  const t1 = await addTeach(mtk, kelasId, g1, sem);
+  const t2 = await addTeach(pweb, kelasId, g2, sem);
 
-  const addAssess = db.prepare('INSERT INTO assessments(teaching_id,outcome_id,name,weight,max_score) VALUES(?,?,?,?,?)');
-  const addScore = db.prepare('INSERT INTO scores(assessment_id,student_id,score) VALUES(?,?,?)');
   let seed = 7;
-  const fill = (aid) => studentIds.forEach((sid) => {
-    seed = (seed * 31 + 17) % 97;
-    addScore.run(aid, sid, 52 + (seed % 45));
-  });
+  for (const [t, cp, name, w] of [[t1, mtkCP[0], 'Ulangan Harian 1', 1], [t1, mtkCP[0], 'Tugas Aljabar', 1], [t1, mtkCP[1], 'Ulangan Harian 2', 1], [t1, mtkCP[1], 'UTS', 2], [t2, pwebCP[0], 'Praktik HTML/CSS', 1], [t2, pwebCP[1], 'Proyek JavaScript', 2], [t2, pwebCP[2], 'Praktik Database', 1]]) {
+    let aid;
+    if (isTurso) aid = Number((await db._client.execute({ sql: 'INSERT INTO assessments(teaching_id,outcome_id,name,weight,max_score) VALUES(?,?,?,?,?)', args: [t, cp, name, w, 100] })).lastInsertRowId);
+    else aid = db.prepare('INSERT INTO assessments(teaching_id,outcome_id,name,weight,max_score) VALUES(?,?,?,?,?)').run(t, cp, name, w, 100).lastInsertRowid;
 
-  [
-    [t1, mtkCP[0], 'Ulangan Harian 1', 1], [t1, mtkCP[0], 'Tugas Aljabar', 1],
-    [t1, mtkCP[1], 'Ulangan Harian 2', 1], [t1, mtkCP[1], 'UTS', 2],
-    [t2, pwebCP[0], 'Praktik HTML/CSS', 1], [t2, pwebCP[1], 'Proyek JavaScript', 2],
-    [t2, pwebCP[2], 'Praktik Database', 1]
-  ].forEach(([t, cp, name, w]) => fill(addAssess.run(t, cp, name, w, 100).lastInsertRowid));
+    for (const sid of studentIds) {
+      seed = (seed * 31 + 17) % 97;
+      const score = 52 + (seed % 45);
+      if (isTurso) await db._client.execute({ sql: 'INSERT INTO scores(assessment_id,student_id,score) VALUES(?,?,?)', args: [aid, sid, score] });
+      else db.prepare('INSERT INTO scores(assessment_id,student_id,score) VALUES(?,?,?)').run(aid, sid, score);
+    }
+  }
 
-  db.prepare('INSERT INTO reflections(teaching_id,content,follow_up) VALUES(?,?,?)').run(
-    t1,
-    'Sebagian siswa masih kesulitan pada materi trigonometri.',
-    'Remedial terjadwal dan latihan soal tambahan minggu depan.'
-  );
-  db.prepare('INSERT INTO announcements(title,body) VALUES(?,?)').run(
-    'Selamat datang di SIAKAD OBE Sekolah',
-    'Sistem ini membantu memantau capaian pembelajaran siswa. Segera ganti password akun Anda.'
-  );
-});
+  if (isTurso) {
+    await db._client.execute({ sql: 'INSERT INTO reflections(teaching_id,content,follow_up) VALUES(?,?,?)', args: [t1, 'Sebagian siswa masih kesulitan trigonometri.', 'Remedial minggu depan.'] });
+    await db._client.execute({ sql: 'INSERT INTO announcements(title,body) VALUES(?,?)', args: ['Selamat datang di SIAKAD OBE', 'Sistem memantau capaian siswa.'] });
+  } else {
+    db.prepare('INSERT INTO reflections(teaching_id,content,follow_up) VALUES(?,?,?)').run(t1, 'Sebagian siswa masih kesulitan trigonometri.', 'Remedial minggu depan.');
+    db.prepare('INSERT INTO announcements(title,body) VALUES(?,?)').run('Selamat datang di SIAKAD OBE', 'Sistem memantau capaian siswa.');
+  }
 
-run();
-console.log('Seed selesai. Akun demo:');
-console.log('  admin  / admin123');
-console.log('  kepsek / kepsek123');
-console.log('  guru1  / guru123   (juga guru2)');
-console.log('  2026001 / siswa123 (NIS 2026001 - 2026006)');
+  console.log('Seed selesai. Akun demo: admin/admin123, kepsek/kepsek123, guru1/guru123, 2026001/siswa123');
+})();
