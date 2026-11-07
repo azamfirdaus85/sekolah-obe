@@ -1,22 +1,42 @@
-let Database;
-try {
-  const { DatabaseSync } = require('node:sqlite');
-  Database = DatabaseSync;
-} catch (e) { throw e; }
-const path = require('path');
-const fs = require('fs');
+const { createClient } = require('@libsql/client');
 const bcrypt = require('bcryptjs');
 
-const dbFile = process.env.DB_FILE || path.join(__dirname, 'data', 'sekolah.db');
-const finalDbPath = process.env.VERCEL ? '/tmp/sekolah.db' : dbFile;
-if (!process.env.VERCEL) {
-  fs.mkdirSync(path.dirname(finalDbPath), { recursive: true });
-}
-const db = new Database(finalDbPath);
-db.exec(`PRAGMA journal_mode = WAL;`);
-db.exec(`PRAGMA foreign_keys = ON;`);
+// Kalo di Vercel pake Turso, kalo di laptop pake file lokal
+const isVercel = !!process.env.VERCEL;
+let db;
 
-db.exec(`
+if (isVercel) {
+  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    throw new Error('TURSO_DATABASE_URL / TURSO_AUTH_TOKEN belum ke-set di Vercel!');
+  }
+  // Pake Embedded Replica: nulis di /tmp tapi auto-sync ke Turso
+  db = createClient({
+    url: 'file:/tmp/sekolah.db',
+    syncUrl: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+    syncInterval: 60,
+  });
+} else {
+  const path = require('path');
+  const fs = require('fs');
+  const dbFile = process.env.DB_FILE || path.join(__dirname, 'data', 'sekolah.db');
+  fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+  db = createClient({ url: 'file:' + dbFile });
+}
+
+// Biar kode lama kamu yang pake db.prepare().get().run() tetep jalan
+// kita bungkus biar sync
+const originalExec = db.executeSync.bind(db);
+db.exec = (sql) => { return originalExec(sql); };
+
+function syncDb() {
+  if (isVercel && db.sync) {
+    db.sync().catch(e => console.log('Sync error:', e.message));
+  }
+}
+
+// Buat tabel (sama kayak punya kamu)
+db.executeSync(`
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
@@ -86,26 +106,48 @@ CREATE TABLE IF NOT EXISTS reflections (
 );
 `);
 
-// --- AUTO SEED ---
+// --- AUTO SEED, CUMA KALO BENER-BENER KOSONG ---
 try {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  // Sync dulu dari Turso biar data lama ke-download
+  if (isVercel && db.sync) {
+    db.sync();
+  }
+  const count = db.executeSync('SELECT COUNT(*) AS n FROM users').rows[0].n;
   if (count === 0) {
     console.log('Database kosong, seeding...');
     const hash = (p) => bcrypt.hashSync(p, 10);
-    const addUser = db.prepare('INSERT INTO users(username, password_hash, name, role) VALUES(?,?,?,?)');
-    addUser.run('admin', hash('admin123'), 'Administrator Sekolah', 'admin');
-    addUser.run('kepsek', hash('kepsek123'), 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
-    const g1 = addUser.run('guru1', hash('guru123'), 'Siti Rahma, S.Pd.', 'guru').lastInsertRowid;
-    const g2 = addUser.run('guru2', hash('guru123'), 'Budi Hartono, S.Kom.', 'guru').lastInsertRowid;
-    const kelasId = db.prepare('INSERT INTO classes(name,year) VALUES(?,?)').run('X RPL 1', '2026/2027').lastInsertRowid;
-    const s1 = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('INF', 'Informatika').lastInsertRowid;
-    const s2 = db.prepare('INSERT INTO subjects(code,name) VALUES(?,?)').run('MTK', 'Matematika').lastInsertRowid;
-    db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(s1, kelasId, g1, 'Ganjil 2026/2027');
-    db.prepare('INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)').run(s2, kelasId, g2, 'Ganjil 2026/2027');
-    db.prepare('INSERT INTO announcements(title,body) VALUES(?,?)').run('Selamat Datang', 'Selamat datang di SIAKAD OBE Sekolah');
-    db.prepare('INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)').run(s1, 'CP-1', 'Memahami konsep dasar informatika');
+    const addUser = (u,p,n,r) => db.executeSync({ sql: 'INSERT INTO users(username, password_hash, name, role) VALUES(?,?,?,?)', args: [u, hash(p), n, r] });
+    addUser('admin', 'admin123', 'Administrator Sekolah', 'admin');
+    addUser('kepsek', 'kepsek123', 'Drs. Ahmad Fauzi, M.Pd.', 'kepsek');
+    const g1 = Number(db.executeSync({ sql: 'INSERT INTO users(username, password_hash, name, role) VALUES(?,?,?,?)', args: ['guru1', hash('guru123'), 'Siti Rahma, S.Pd.', 'guru'] }).lastInsertRowid);
+    const g2 = Number(db.executeSync({ sql: 'INSERT INTO users(username, password_hash, name, role) VALUES(?,?,?,?)', args: ['guru2', hash('guru123'), 'Budi Hartono, S.Kom.', 'guru'] }).lastInsertRowid);
+    const kelasId = Number(db.executeSync({ sql: 'INSERT INTO classes(name,year) VALUES(?,?)', args: ['X RPL 1', '2026/2027'] }).lastInsertRowid);
+    const s1 = Number(db.executeSync({ sql: 'INSERT INTO subjects(code,name) VALUES(?,?)', args: ['INF', 'Informatika'] }).lastInsertRowid);
+    const s2 = Number(db.executeSync({ sql: 'INSERT INTO subjects(code,name) VALUES(?,?)', args: ['MTK', 'Matematika'] }).lastInsertRowid);
+    db.executeSync({ sql: 'INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)', args: [s1, kelasId, g1, 'Ganjil 2026/2027'] });
+    db.executeSync({ sql: 'INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)', args: [s2, kelasId, g2, 'Ganjil 2026/2027'] });
+    db.executeSync({ sql: 'INSERT INTO announcements(title,body) VALUES(?,?)', args: ['Selamat Datang', 'Selamat datang di SIAKAD OBE Sekolah'] });
+    db.executeSync({ sql: 'INSERT INTO outcomes(subject_id,code,description) VALUES(?,?,?)', args: [s1, 'CP-1', 'Memahami konsep dasar informatika'] });
     console.log('Seed selesai');
+    syncDb();
   }
 } catch (e) { console.log('Auto seed error:', e.message); }
 
+// Wrapper biar file api/ lama kamu yang pake .prepare() tetep jalan
+const oldPrepare = db.prepare ? db.prepare.bind(db) : null;
+if (!db.prepare) {
+  db.prepare = (sql) => {
+    return {
+      get: (...args) => db.executeSync({ sql, args }).rows[0],
+      all: (...args) => db.executeSync({ sql, args }).rows,
+      run: (...args) => {
+        const res = db.executeSync({ sql, args });
+        syncDb();
+        return { lastInsertRowid: res.lastInsertRowid, changes: res.rowsAffected };
+      }
+    };
+  };
+}
+
 module.exports = db;
+module.exports.syncDb = syncDb;
