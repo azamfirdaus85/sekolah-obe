@@ -19,7 +19,6 @@ const OTHER_TABLES = [
 ];
 
 if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
-  // ===== TURSO CLOUD (VERCEL) =====
   const { createClient } = require('@libsql/client');
   client = createClient({
     url: process.env.TURSO_DATABASE_URL,
@@ -30,18 +29,12 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   (async () => {
     try {
       await client.execute(CREATE_USERS);
-      for (const sql of OTHER_TABLES) {
-        try { await client.execute(sql); } catch (e) {}
-      }
-      // Migrasi buat tabel lama yang udah ke-seed tanpa active/must_change
+      for (const sql of OTHER_TABLES) { try { await client.execute(sql); } catch (e) {} }
       try { await client.execute(`ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1`); } catch (e) {}
       try { await client.execute(`ALTER TABLE users ADD COLUMN must_change INTEGER DEFAULT 0`); } catch (e) {}
       try { await client.execute(`UPDATE users SET active = 1 WHERE active IS NULL`); } catch (e) {}
       try { await client.execute(`UPDATE users SET must_change = 0 WHERE must_change IS NULL`); } catch (e) {}
-      console.log('DB Turso: tabel siap + migrasi active/must_change OK');
-    } catch (e) {
-      console.error('DB Turso init error:', e.message);
-    }
+    } catch (e) { console.error(e.message); }
   })();
 
   db = {
@@ -49,36 +42,40 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
     _client: client,
     isTurso: true,
     _isTurso: true,
-    // Helper query biar enak dipakai di routes
     query: (sql, args = []) => client.execute({ sql, args }),
-    // Jangan dipakai lagi di Vercel, tapi biar gak crash kalau ada file lama yang masih manggil
-    prepare: () => {
-      throw new Error('Di Turso pakai db.client.execute, jangan db.prepare. Lihat auth.js / authMiddleware.js yang baru.');
-    },
+    
+    // INI KUNCINYA: prepare yang compatible dengan Turso + kode lama
+    prepare: (sql) => ({
+      get: async (...args) => {
+        const r = await client.execute({ sql, args });
+        return r.rows[0];
+      },
+      all: async (...args) => {
+        const r = await client.execute({ sql, args });
+        return r.rows;
+      },
+      run: async (...args) => {
+        const r = await client.execute({ sql, args });
+        return { lastInsertRowid: r.lastInsertRowId ? Number(r.lastInsertRowId) : 0, lastInsertRowId: r.lastInsertRowId, changes: r.rowsAffected || 0, rowsAffected: r.rowsAffected };
+      }
+    }),
+
     exec: async (sql) => { try { await client.execute(sql); } catch (e) {} },
     transaction: (fn) => fn,
     syncDb: () => {},
   };
-  console.log('DB Mode: TURSO CLOUD ASYNC');
+  console.log('DB Mode: TURSO CLOUD COMPAT');
 
 } else {
-  // ===== LOKAL (better-sqlite3) =====
   const Database = require('better-sqlite3');
   const dbDir = path.join(__dirname, 'data');
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
   const sqlite = new Database(path.join(dbDir, 'siakad.db'));
   sqlite.pragma('journal_mode = WAL');
-
-  // Buat semua tabel
   sqlite.exec(CREATE_USERS);
   sqlite.exec(OTHER_TABLES.join(';\n'));
-
-  // Migrasi lokal juga
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1`); } catch (e) {}
   try { sqlite.exec(`ALTER TABLE users ADD COLUMN must_change INTEGER DEFAULT 0`); } catch (e) {}
-  try { sqlite.exec(`UPDATE users SET active = 1 WHERE active IS NULL`); } catch (e) {}
-  try { sqlite.exec(`UPDATE users SET must_change = 0 WHERE must_change IS NULL`); } catch (e) {}
-
   db = sqlite;
   db.client = null;
   db._client = null;
