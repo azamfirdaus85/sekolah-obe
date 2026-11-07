@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const db = require('./db');
 
 let SECRET = process.env.JWT_SECRET;
@@ -19,20 +20,26 @@ function sign(user) {
   return jwt.sign({ id: user.id }, SECRET, { expiresIn: '8h' });
 }
 
-// INI YANG DIBENERIN: tambahin async + await
 async function auth(req, res, next) {
   const token = req.cookies && req.cookies.token;
   if (!token) return res.status(401).json({ error: 'Belum login' });
   try {
     const payload = jwt.verify(token, SECRET);
-    const user = await db
-      .prepare('SELECT id, username, name, role, active, must_change FROM users WHERE id = ?')
-      .get(payload.id);
-    if (!user || !user.active) return res.status(401).json({ error: 'Akun tidak aktif' });
+    let user;
+    if (db.isTurso) {
+      const r = await db.client.execute({
+        sql: 'SELECT id, username, name, role, active, must_change FROM users WHERE id = ?',
+        args: [payload.id]
+      });
+      user = r.rows[0];
+    } else {
+      user = db.prepare('SELECT id, username, name, role, active, must_change FROM users WHERE id = ?').get(payload.id);
+    }
+    // FIX: active NULL = aktif. Cuma tolak kalau active === 0
+    if (!user || user.active === 0) return res.status(401).json({ error: 'Akun tidak aktif' });
     req.user = user;
     next();
   } catch (e) {
-    console.log('Auth gagal:', e.message);
     return res.status(401).json({ error: 'Sesi berakhir, silakan login lagi' });
   }
 }
