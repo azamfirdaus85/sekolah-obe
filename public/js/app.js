@@ -298,7 +298,7 @@
   }
 
   async function newsView() {
-    const list = await api('/announcements');
+        const list = await api('/announcements');
     return `<h1>Pengumuman</h1>
       <div class="card"><form class="form" data-form="post" data-url="/admin/announcements">
         <div class="field"><label>Judul</label><input name="title" required></div>
@@ -598,7 +598,7 @@
     const hist = d.rows.length
       ? d.rows.map((r) => `<tr><td>${fday(r.date)}</td><td>${statusPill(r.status)}</td><td>${esc(r.check_in || '-')}</td><td>${esc(r.check_out || '-')}</td><td>${esc(r.note || '')}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">Belum ada riwayat.</td></tr>';
-    return `<div class="card"><h2>Absensi Saya - ${fday(d.date)}</h2>${info}
+          return `<div class="card"><h2>Absensi Saya - ${fday(d.date)}</h2>${info}
         <div class="actions" style="margin-top:.8rem">
           <button class="btn" data-action="staffIn" ${canIn ? '' : 'disabled'}>Absen Masuk</button>
           <button class="btn ghost" data-action="staffOut" ${canOut ? '' : 'disabled'}>Absen Pulang</button>
@@ -642,14 +642,26 @@
         <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Hadir</th><th class="num">Izin</th><th class="num">Sakit</th><th class="num">Alpa</th><th class="num">% Hadir</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
 
-    const d = await api(`/absensi/guru/siswa?teaching_id=${tid}&date=${period}`);
+    const [d, sesiData] = await Promise.all([
+      api(`/absensi/guru/siswa?teaching_id=${tid}&date=${period}`),
+      api(`/absensi/guru/sesi?teaching_id=${tid}`).catch(() => ({ session: null }))
+    ]);
+    const sesi = sesiData.session || sesiData.activeSession || null;
+    const sesiHtml = `<div class="card"><h2>🟢 Sesi Absensi Mandiri</h2>
+      ${sesi && sesi.status === 'open' ? `<p>Sesi sedang <b>dibuka</b>. Ditutup pada: <b>${esc(sesi.closes_at || '-')}</b></p>
+        <div class="actions"><button class="btn danger" data-action="tutupSesi" data-id="${esc(sesi.id)}">Tutup Sesi</button></div>`
+        : '<p class="muted">Belum ada sesi absensi mandiri yang aktif untuk kelas ini.</p>'}
+      <form class="form inline" data-form="bukaSesi" data-tid="${esc(tid)}">
+        <div class="field"><label>Durasi sesi (menit)</label><input name="durasi_menit" type="number" min="1" max="1440" value="30" required></div>
+        <button class="btn" type="submit" ${sesi && sesi.status === 'open' ? 'disabled' : ''}>Buka Sesi Absensi</button>
+      </form><p class="muted small">Siswa di kelas ini dapat melakukan absensi mandiri selama sesi masih aktif.</p></div>`;
     const rows = d.rows
       .map((r) => `<tr data-sid="${r.student_id}"><td>${esc(r.nis)}</td><td>${esc(r.name)}</td>
         <td><select class="abs-status">${STATUS_SISWA.map((s) => `<option value="${s}" ${(r.status || 'hadir') === s ? 'selected' : ''}>${STATUS_LABEL[s]}</option>`).join('')}</select></td>
         <td><input class="abs-note" maxlength="200" placeholder="Keterangan" value="${esc(r.note || '')}"></td></tr>`)
       .join('');
     const belum = d.rows.length && d.rows.every((r) => !r.status);
-    return head + tabs + picker + `<div class="card"><h2>${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}</h2>
+    return head + tabs + picker + sesiHtml + `<div class="card"><h2>${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}</h2>
       <p class="muted small">${fday(d.date)}${belum ? ' &bull; Belum pernah diabsen, semua diisi Hadir secara default. Ubah yang tidak hadir lalu simpan.' : ''}</p>
       ${d.rows.length ? `<form data-form="saveAbsen" data-tid="${d.teaching.id}" data-date="${esc(d.date)}">
         <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -659,7 +671,17 @@
 
   // ---------- SISWA ----------
   async function absenSiswa() {
-    const d = await api('/absensi/siswa/saya');
+    const [d, sesiData] = await Promise.all([
+      api('/absensi/siswa/saya'),
+      api('/absensi/siswa/sesi-aktif').catch(() => ({ sessions: [] }))
+    ]);
+    const sesiAktif = Array.isArray(sesiData) ? sesiData : (sesiData.sessions || sesiData.rows || []);
+    const sesiHtml = `<div class="card"><h2>📍 Sesi Absensi Aktif</h2>
+      ${sesiAktif.length ? sesiAktif.map((x) => `<div class="news"><h3>${esc(x.subject_name || x.teaching_name || 'Mata Pelajaran')} - ${esc(x.class_name || 'Kelas')}</h3>
+        <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
+        <button class="btn" data-action="absenMandiri" data-id="${esc(x.id || x.session_id)}">Absen Sekarang</button></div>`).join('')
+        : '<p class="muted">Belum ada sesi absensi yang dibuka untuk kelas Anda.</p>'}
+      <button class="btn sm ghost" data-action="refreshAbsen">Perbarui</button></div>`;
     const s = d.summary;
     const total = s.hadir + s.izin + s.sakit + s.alpa;
     const pct = total ? Math.round((s.hadir / total) * 100) : null;
@@ -668,6 +690,7 @@
       : '<tr><td colspan="4" class="muted">Belum ada data absensi.</td></tr>';
     return `<h1>Absensi Saya</h1><p class="muted">NIS ${esc(d.nis)}</p>
       <div class="cards">${statCard('Hadir', s.hadir)}${statCard('Izin', s.izin)}${statCard('Sakit', s.sakit)}${statCard('Alpa', s.alpa)}${statCard('% Kehadiran', pct == null ? '-' : pct + '%')}</div>
+      ${sesiHtml}
       <div class="card"><h2>Riwayat Absensi</h2><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Mata Pelajaran</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
@@ -741,6 +764,10 @@
       catch (e) { msg.textContent = e.message; }
     },
     absenPick(data, f) { location.hash = `#/absen/${f.dataset.sub}/${data.teaching_id}/${data.period}`; },
+    async bukaSesi(data, f) {
+      await api('/absensi/guru/sesi/buka', 'POST', { teaching_id: Number(f.dataset.tid), durasi_menit: Number(data.durasi_menit) });
+      toast('Sesi absensi berhasil dibuka'); route();
+    },
     absenPantauPick(data) { location.hash = `#/absen/hari/${data.date}`; },
     async saveAbsen(data, f) {
       const records = [...f.querySelectorAll('tr[data-sid]')].map((tr) => ({
@@ -781,6 +808,17 @@
           <div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Tutup</button><button class="btn" type="submit">Simpan</button></div></form>`);
     },
     allHadir() { document.querySelectorAll('.abs-status').forEach((s) => { s.value = 'hadir'; }); },
+    async tutupSesi(el) {
+      if (!confirm('Tutup sesi absensi ini?')) return;
+      await api('/absensi/guru/sesi/tutup', 'POST', { session_id: Number(el.dataset.id) });
+      toast('Sesi absensi ditutup'); route();
+    },
+    async absenMandiri(el) {
+      if (!confirm('Kirim absensi sekarang? Absensi hanya dapat dilakukan satu kali.')) return;
+      await api('/absensi/siswa/absen', 'POST', { session_id: Number(el.dataset.id) });
+      toast('Absensi berhasil dicatat'); route();
+    },
+    refreshAbsen() { route(); },
     async staffIn() { await api('/absensi/staf/masuk', 'POST', {}); toast('Absen masuk tercatat'); route(); },
     async staffOut() { await api('/absensi/staf/pulang', 'POST', {}); toast('Absen pulang tercatat'); route(); },
     pw() {
