@@ -18,6 +18,9 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/guru', require('./routes/guru'));
 app.use('/api/siswa', require('./routes/siswa'));
 app.use('/api/monitor', require('./routes/monitor'));
+app.use('/api/absensi', require('./routes/absensi'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/portal', require('./routes/portal'));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan' }));
 
 app.use(express.static(path.join(__dirname, 'public')));

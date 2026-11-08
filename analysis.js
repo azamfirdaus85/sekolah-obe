@@ -1,6 +1,7 @@
 const db = require('./db');
 
 const KKM = 75;
+const round2 = (n) => Math.round(n * 100) / 100;
 
 async function analyze(teachingId) {
   // Informasi kelas ajar
@@ -26,7 +27,7 @@ async function analyze(teachingId) {
     ORDER BY u.name
   `).all(teaching.class_id);
 
-  const studentsNorm = (students || []).map(s => ({
+  const studentsNorm = (students || []).map((s) => ({
     id: s.student_id,
     student_id: s.student_id,
     nis: s.nis,
@@ -51,24 +52,18 @@ async function analyze(teachingId) {
   `).all(teachingId);
 
   const scoreMap = new Map();
-
   for (const s of scores) {
-    scoreMap.set(
-      `${s.assessment_id}:${s.student_id}`,
-      Number(s.score)
-    );
+    scoreMap.set(`${s.assessment_id}:${s.student_id}`, Number(s.score));
   }
 
   // Perhitungan nilai setiap siswa
-  const studentRows = studentsNorm.map(st => {
+  const studentRows = studentsNorm.map((st) => {
     let total = 0;
     let weightSum = 0;
-
     const scoresPerOutcome = {};
 
     for (const a of assessments) {
       const v = scoreMap.get(`${a.id}:${st.id}`);
-
       if (v !== undefined && a.max_score > 0) {
         const norm = (v / a.max_score) * 100;
         const weight = Number(a.weight) || 1;
@@ -77,10 +72,7 @@ async function analyze(teachingId) {
         weightSum += weight;
 
         if (a.outcome_id) {
-          if (!scoresPerOutcome[a.outcome_id]) {
-            scoresPerOutcome[a.outcome_id] = [];
-          }
-
+          if (!scoresPerOutcome[a.outcome_id]) scoresPerOutcome[a.outcome_id] = [];
           scoresPerOutcome[a.outcome_id].push(norm);
         }
       }
@@ -90,30 +82,23 @@ async function analyze(teachingId) {
     const pass = avg !== null && avg >= KKM;
 
     const scoresObj = {};
-
     for (const k in scoresPerOutcome) {
       const arr = scoresPerOutcome[k];
-
-      scoresObj[k] = Math.round(
-        (arr.reduce((x, y) => x + y, 0) / arr.length) * 100
-      ) / 100;
+      scoresObj[k] = round2(arr.reduce((x, y) => x + y, 0) / arr.length);
     }
 
     return {
       ...st,
-      avg,
+      avg: avg === null ? null : round2(avg),
       pass,
-      final: avg,
+      final: avg === null ? null : round2(avg),
       passed: pass,
       scores: scoresObj
     };
   });
 
   // Rata-rata kelas
-  const validAvgs = studentRows
-    .map(s => s.avg)
-    .filter(v => v !== null);
-
+  const validAvgs = studentRows.map((s) => s.avg).filter((v) => v !== null);
   const classAvg = validAvgs.length
     ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length
     : 0;
@@ -126,37 +111,28 @@ async function analyze(teachingId) {
     ORDER BY code
   `).all(teaching.subject_id);
 
-  const outcomeRows = outcomes.map(o => {
-    const rel = assessments.filter(
-      a => Number(a.outcome_id) === Number(o.id)
-    );
-
+  const outcomeRows = outcomes.map((o) => {
+    const rel = assessments.filter((a) => Number(a.outcome_id) === Number(o.id));
     const vals = [];
 
     for (const st of studentsNorm) {
       for (const a of rel) {
         const v = scoreMap.get(`${a.id}:${st.id}`);
-
         if (v !== undefined && a.max_score > 0) {
           vals.push((v / a.max_score) * 100);
         }
       }
     }
 
-    const avg = vals.length
-      ? vals.reduce((a, b) => a + b, 0) / vals.length
-      : 0;
-
-    const passRate = vals.length
-      ? (vals.filter(v => v >= KKM).length / vals.length) * 100
-      : 0;
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const passRate = vals.length ? (vals.filter((v) => v >= KKM).length / vals.length) * 100 : 0;
 
     return {
       id: o.id,
       code: o.code,
       description: o.description,
-      avg: Math.round(avg * 100) / 100,
-      passRate: Math.round(passRate * 100) / 100
+      avg: round2(avg),
+      passRate: round2(passRate)
     };
   });
 
@@ -164,15 +140,12 @@ async function analyze(teachingId) {
     teaching,
     students: studentRows,
     assessments,
-    classAvg: Math.round(classAvg * 100) / 100,
+    classAvg: round2(classAvg),
     outcomes: outcomeRows,
     kkm: KKM,
-    passCount: studentRows.filter(s => s.pass).length,
-    totalStudents: students.length
+    passCount: studentRows.filter((s) => s.pass).length,
+    totalStudents: studentRows.length
   };
 }
 
-module.exports = {
-  analyze,
-  KKM
-};
+module.exports = { analyze, KKM };
