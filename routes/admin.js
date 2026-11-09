@@ -2,10 +2,174 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
+const { buildReport } = require('../rapor');
 
 router.use(auth, role('admin'));
 
 const XLSX = require('xlsx');
+
+// ===== LOG AKTIVITAS ADMIN =====
+// Mencatat setiap perubahan data yang berhasil dilakukan lewat route admin
+// (tambah, ubah, hapus, impor, kenaikan kelas, export, backup).
+// Password dan isi file TIDAK pernah dicatat. Log lebih dari 180 hari dihapus otomatis.
+let logReady = null;
+
+function ensureLog() {
+  if (!logReady) {
+    logReady = (async () => {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          user_name TEXT,
+          action TEXT NOT NULL,
+          detail TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        )
+      `).run();
+      await db.prepare(
+        "DELETE FROM activity_log WHERE created_at < datetime('now', '-180 days')"
+      ).run();
+    })().catch((e) => {
+      console.error('Siapkan log gagal:', e);
+      logReady = null;
+      throw e;
+    });
+  }
+  return logReady;
+}
+
+const LOG_RULES = [
+  ['POST', /^\/users$/, 'Menambah pengguna'],
+  ['POST', /^\/users\/import$/, 'Impor pengguna dari Excel'],
+  ['PUT', /^\/users\/\d+$/, 'Mengubah pengguna'],
+  ['DELETE', /^\/users\/\d+$/, 'Menghapus pengguna'],
+  ['POST', /^\/classes$/, 'Menambah kelas'],
+  ['DELETE', /^\/classes\/\d+$/, 'Menghapus kelas'],
+  ['PUT', /^\/classes\/\d+\/homeroom$/, 'Mengatur wali kelas'],
+  ['POST', /^\/subjects$/, 'Menambah mata pelajaran'],
+  ['DELETE', /^\/subjects\/\d+$/, 'Menghapus mata pelajaran'],
+  ['POST', /^\/teaching$/, 'Menambah kelas ajar'],
+  ['DELETE', /^\/teaching\/\d+$/, 'Menghapus kelas ajar'],
+  ['POST', /^\/announcements$/, 'Menerbitkan pengumuman'],
+  ['DELETE', /^\/announcements\/\d+$/, 'Menghapus pengumuman'],
+  ['POST', /^\/promotion$/, 'Kenaikan kelas / kelulusan'],
+  ['PUT', /^\/students\/\d+\/restore$/, 'Mengembalikan alumni ke kelas'],
+  ['POST', /^\/periods$/, 'Menambah periode'],
+  ['PUT', /^\/periods\/\d+\/activate$/, 'Mengaktifkan periode'],
+  ['DELETE', /^\/periods\/\d+$/, 'Menghapus periode'],
+  ['GET', /^\/users\/export$/, 'Export data pengguna'],
+  ['GET', /^\/export\/nilai$/, 'Export nilai'],
+  ['GET', /^\/export\/absensi$/, 'Export absensi'],
+  ['GET', /^\/backup$/, 'Backup database']
+];
+
+// Hanya kolom aman yang dicatat sebagai keterangan
+const LOG_FIELDS = ['username', 'name', 'role', 'active', 'code', 'title', 'year', 'semester',
+  'teacher_id', 'class_id', 'subject_id', 'from_class_id', 'to_class_id', 'graduate'];
+
+function logDetail(method, path, query, body) {
+  const parts = [];
+  const idm = /\/(\d+)(?:\/|$)/.exec(path);
+  if (idm) parts.push('id ' + idm[1]);
+
+  if (body && typeof body === 'object') {
+    for (const k of LOG_FIELDS) {
+      if (body[k] !== undefined && body[k] !== null && body[k] !== '') {
+        parts.push(k + '=' + String(body[k]).slice(0, 60));
+      }
+    }
+    if (body.password && method === 'PUT') parts.push('password direset');
+    if (Array.isArray(body.student_ids)) parts.push(body.student_ids.length + ' siswa');
+  }
+
+  if (query && query.class_id) parts.push('class_id=' + String(query.class_id).slice(0, 10));
+  if (query && query.semester) parts.push('semester=' + String(query.semester).slice(0, 40));
+
+  return parts.join(', ').slice(0, 300);
+}
+
+router.use((req, res, next) => {
+  const method = req.method;
+  const path = req.path; // relatif terhadap router, ambil sekarang sebelum berubah
+  const rule = LOG_RULES.find(([m, re]) => m === method && re.test(path));
+
+  if (!rule) return next();
+
+  const detail = logDetail(method, path, req.query, req.body);
+
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+    (async () => {
+      try {
+        await ensureLog();
+        const u = req.user || {};
+        await db.prepare(
+          'INSERT INTO activity_log(user_id, user_name, action, detail) VALUES(?,?,?,?)'
+        ).run(u.id || null, String(u.name || u.username || '').slice(0, 120), rule[2], detail || null);
+      } catch (e) {
+        console.error('Catat log gagal:', e);
+      }
+    })();
+  });
+
+  next();
+});
+
+router.get('/logs', async (req, res) => {
+  try {
+    await ensureLog();
+    const per = 50;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const total = Number((await db.prepare('SELECT COUNT(*) n FROM activity_log').get()).n);
+    const rows = await db.prepare(
+      'SELECT id, user_name, action, detail, created_at FROM activity_log ORDER BY id DESC LIMIT ? OFFSET ?'
+    ).all(per, (page - 1) * per);
+
+    res.json({ rows, total, page, per });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// ===== BACKUP DATABASE =====
+// Mengunduh semua tabel sebagai satu file JSON. File ini berisi data lengkap
+// (termasuk hash password), jadi simpan di tempat aman.
+router.get('/backup', async (req, res) => {
+  try {
+    const tables = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).all();
+
+    const data = {};
+    const counts = {};
+
+    for (const t of tables) {
+      const name = String(t.name);
+      const rows = await db.prepare(`SELECT * FROM "${name.replace(/"/g, '""')}"`).all();
+      data[name] = rows;
+      counts[name] = rows.length;
+    }
+
+    const json = JSON.stringify(
+      {
+        app: 'SIAKAD OBE Sekolah',
+        created_at: new Date().toISOString(),
+        counts,
+        tables: data
+      },
+      (k, v) => (typeof v === 'bigint' ? Number(v) : v)
+    );
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="backup-siakad-${stamp}.json"`);
+    res.send(json);
+  } catch (e) {
+    console.error('Backup gagal:', e);
+    res.status(500).json({ error: 'Gagal membuat backup' });
+  }
+});
 
 // EXPORT DATA PENGGUNA KE EXCEL
 router.get('/users/export', async (req, res) => {
@@ -291,9 +455,12 @@ router.get('/classes', async (req, res) => {
         c.id,
         c.name,
         c.year,
+        c.homeroom_teacher_id,
+        hu.name AS homeroom_name,
         COUNT(st.id) AS students
       FROM classes c
       LEFT JOIN students st ON st.class_id = c.id
+      LEFT JOIN users hu ON hu.id = c.homeroom_teacher_id
       GROUP BY c.id
       ORDER BY c.name
     `).all());
@@ -326,6 +493,39 @@ router.delete('/classes/:id', async (req, res) => {
     await db.prepare(
       'DELETE FROM classes WHERE id = ?'
     ).run(req.params.id);
+
+    res.json({ ok: true });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// Tetapkan / cabut wali kelas
+router.put('/classes/:id/homeroom', async (req, res) => {
+  try {
+    const kelas = await db.prepare(
+      'SELECT id FROM classes WHERE id = ?'
+    ).get(req.params.id);
+
+    if (!kelas) {
+      return res.status(404).json({ error: 'Kelas tidak ditemukan' });
+    }
+
+    const tid = Number(req.body.teacher_id) || null;
+
+    if (tid) {
+      const guru = await db.prepare(
+        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND active = 1"
+      ).get(tid);
+
+      if (!guru) {
+        return bad(res, 'Wali kelas harus berperan Guru yang aktif.');
+      }
+    }
+
+    await db.prepare(
+      'UPDATE classes SET homeroom_teacher_id = ? WHERE id = ?'
+    ).run(tid, kelas.id);
 
     res.json({ ok: true });
   } catch (e) {
@@ -400,13 +600,32 @@ router.post('/teaching', async (req, res) => {
   const subject = Number(req.body.subject_id);
   const cls = Number(req.body.class_id);
   const teacher = Number(req.body.teacher_id);
-  const semester = str(req.body.semester, 40);
+  let semester = str(req.body.semester, 40);
+  let yearId = null;
 
-  if (!subject || !cls || !teacher || !semester) {
-    return bad(res, 'Mapel, kelas, guru, dan semester wajib diisi.');
+  if (!subject || !cls || !teacher) {
+    return bad(res, 'Mapel, kelas, dan guru wajib diisi.');
   }
 
   try {
+    if (!semester) {
+      const p = await db.prepare(
+        'SELECT id, name, semester FROM academic_years WHERE is_active = 1'
+      ).get();
+
+      if (!p) {
+        return bad(res, 'Belum ada periode aktif. Atur dulu di menu Tahun Ajaran.');
+      }
+
+      semester = `${p.semester} ${p.name}`;
+      yearId = p.id;
+    } else {
+      const p = await db.prepare(
+        "SELECT id FROM academic_years WHERE (semester || ' ' || name) = ?"
+      ).get(semester);
+      yearId = p ? p.id : null;
+    }
+
     const t = await db.prepare(
       "SELECT id FROM users WHERE id = ? AND role = 'guru'"
     ).get(teacher);
@@ -416,8 +635,8 @@ router.post('/teaching', async (req, res) => {
     }
 
     const info = await insertReturnId(
-      'INSERT INTO teaching(subject_id,class_id,teacher_id,semester) VALUES(?,?,?,?)',
-      [subject, cls, teacher, semester]
+      'INSERT INTO teaching(subject_id,class_id,teacher_id,semester,year_id) VALUES(?,?,?,?,?)',
+      [subject, cls, teacher, semester, yearId]
     );
 
     res.status(201).json({ id: info.lastInsertRowid });
@@ -465,6 +684,606 @@ router.delete('/announcements/:id', async (req, res) => {
     ).run(req.params.id);
 
     res.json({ ok: true });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// ===== KENAIKAN KELAS & KELULUSAN =====
+router.get('/classes/:id/students', async (req, res) => {
+  try {
+    res.json(await db.prepare(`
+      SELECT st.id, st.user_id, st.nis, u.name
+      FROM students st
+      JOIN users u ON u.id = st.user_id
+      WHERE st.class_id = ?
+      ORDER BY u.name
+    `).all(req.params.id));
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+router.get('/alumni', async (req, res) => {
+  try {
+    res.json(await db.prepare(`
+      SELECT st.id, st.nis, u.name, st.graduated_at, st.graduated_from
+      FROM students st
+      JOIN users u ON u.id = st.user_id
+      WHERE st.status = 'lulus'
+      ORDER BY st.graduated_at DESC, u.name
+    `).all());
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// Pindahkan siswa satu kelas ke kelas baru, atau luluskan.
+// body: { from_class_id, to_class_id, graduate, student_ids: [], deactivate }
+router.post('/promotion', async (req, res) => {
+  try {
+    const from = Number(req.body.from_class_id);
+    const graduate = req.body.graduate === true;
+    const to = Number(req.body.to_class_id) || null;
+    const ids = Array.isArray(req.body.student_ids)
+      ? [...new Set(req.body.student_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+      : [];
+
+    if (!from) return bad(res, 'Kelas asal wajib dipilih.');
+    if (!ids.length) return bad(res, 'Pilih minimal satu siswa.');
+    if (ids.length > 500) return bad(res, 'Maksimal 500 siswa sekali proses.');
+
+    const src = await db.prepare('SELECT id, name FROM classes WHERE id = ?').get(from);
+    if (!src) return res.status(404).json({ error: 'Kelas asal tidak ditemukan' });
+
+    if (!graduate) {
+      if (!to) return bad(res, 'Kelas tujuan wajib dipilih.');
+      if (to === from) return bad(res, 'Kelas tujuan harus berbeda dari kelas asal.');
+      const dst = await db.prepare('SELECT id FROM classes WHERE id = ?').get(to);
+      if (!dst) return bad(res, 'Kelas tujuan tidak ditemukan.');
+    }
+
+    const members = await db.prepare('SELECT id, user_id FROM students WHERE class_id = ?').all(from);
+    const userOf = new Map(members.map((m) => [Number(m.id), Number(m.user_id)]));
+
+    if (ids.some((i) => !userOf.has(i))) {
+      return bad(res, 'Ada siswa yang bukan anggota kelas asal. Muat ulang halaman lalu coba lagi.');
+    }
+
+    const items = [];
+    for (const id of ids) {
+      if (graduate) {
+        items.push([
+          "UPDATE students SET class_id = NULL, status = 'lulus', graduated_at = date('now'), graduated_from = ? WHERE id = ?",
+          [src.name, id]
+        ]);
+        if (req.body.deactivate === true) {
+          items.push(['UPDATE users SET active = 0 WHERE id = ?', [userOf.get(id)]]);
+        }
+      } else {
+        items.push(['UPDATE students SET class_id = ? WHERE id = ?', [to, id]]);
+      }
+    }
+
+    await db.batch(items); // atomik: semua berhasil atau semua batal
+    res.json({ ok: true, count: ids.length });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// Kembalikan alumni ke sebuah kelas (jika salah meluluskan)
+router.put('/students/:id/restore', async (req, res) => {
+  try {
+    const cid = Number(req.body.class_id);
+    if (!cid) return bad(res, 'Kelas tujuan wajib dipilih.');
+
+    const kelas = await db.prepare('SELECT id FROM classes WHERE id = ?').get(cid);
+    if (!kelas) return bad(res, 'Kelas tidak ditemukan.');
+
+    const st = await db.prepare(
+      "SELECT id, user_id FROM students WHERE id = ? AND status = 'lulus'"
+    ).get(req.params.id);
+    if (!st) return res.status(404).json({ error: 'Data alumni tidak ditemukan' });
+
+    await db.batch([
+      ["UPDATE students SET class_id = ?, status = 'aktif', graduated_at = NULL, graduated_from = NULL WHERE id = ?", [cid, Number(st.id)]],
+      ['UPDATE users SET active = 1 WHERE id = ?', [Number(st.user_id)]]
+    ]);
+    res.json({ ok: true });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// ===== TAHUN AJARAN & SEMESTER =====
+router.get('/periods', async (req, res) => {
+  try {
+    res.json(await db.prepare(`
+      SELECT p.id, p.name, p.semester, p.is_active,
+        (SELECT COUNT(*) FROM teaching t WHERE t.year_id = p.id) AS used
+      FROM academic_years p
+      ORDER BY p.name DESC, p.semester DESC
+    `).all());
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+router.get('/periods/active', async (req, res) => {
+  try {
+    const p = await db.prepare(
+      'SELECT id, name, semester FROM academic_years WHERE is_active = 1'
+    ).get();
+    res.json(p || null);
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+router.post('/periods', async (req, res) => {
+  const name = str(req.body.name, 9);
+  const semester = str(req.body.semester, 10);
+
+  if (!/^\d{4}\/\d{4}$/.test(name)) {
+    return bad(res, 'Format tahun ajaran harus seperti 2026/2027.');
+  }
+
+  if (!['Ganjil', 'Genap'].includes(semester)) {
+    return bad(res, 'Semester harus Ganjil atau Genap.');
+  }
+
+  try {
+    const aktif = await db.prepare(
+      'SELECT id FROM academic_years WHERE is_active = 1'
+    ).get();
+
+    const info = await insertReturnId(
+      'INSERT INTO academic_years(name,semester,is_active) VALUES(?,?,?)',
+      [name, semester, aktif ? 0 : 1]
+    );
+
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+router.put('/periods/:id/activate', async (req, res) => {
+  try {
+    const p = await db.prepare(
+      'SELECT id FROM academic_years WHERE id = ?'
+    ).get(req.params.id);
+
+    if (!p) {
+      return res.status(404).json({ error: 'Periode tidak ditemukan' });
+    }
+
+    await db.prepare('UPDATE academic_years SET is_active = 0').run();
+    await db.prepare(
+      'UPDATE academic_years SET is_active = 1 WHERE id = ?'
+    ).run(p.id);
+
+    res.json({ ok: true });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+router.delete('/periods/:id', async (req, res) => {
+  try {
+    const p = await db.prepare(
+      'SELECT id, is_active FROM academic_years WHERE id = ?'
+    ).get(req.params.id);
+
+    if (!p) {
+      return res.status(404).json({ error: 'Periode tidak ditemukan' });
+    }
+
+    if (p.is_active) {
+      return bad(res, 'Periode aktif tidak bisa dihapus. Aktifkan periode lain dulu.');
+    }
+
+    const dipakai = await db.prepare(
+      'SELECT COUNT(*) n FROM teaching WHERE year_id = ?'
+    ).get(p.id);
+
+    if (dipakai.n > 0) {
+      return bad(res, 'Periode sudah dipakai oleh Kelas Ajar, tidak bisa dihapus.');
+    }
+
+    await db.prepare('DELETE FROM academic_years WHERE id = ?').run(p.id);
+    res.json({ ok: true });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// ===== IMPOR PENGGUNA DARI EXCEL =====
+const IMPORT_MAX_ROWS = 100;
+const IMPORT_MAX_BYTES = 500 * 1024;
+const IMPORT_ROLES = {
+  siswa: 'siswa',
+  guru: 'guru',
+  kepsek: 'kepsek',
+  'kepala sekolah': 'kepsek',
+  admin: 'admin'
+};
+
+// Template Excel yang bisa diunduh
+router.get('/users/template', (req, res) => {
+  try {
+    const wb = XLSX.utils.book_new();
+
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['Username', 'Nama Lengkap', 'Peran', 'Password', 'NIS', 'Kelas'],
+      ['siswa001', 'Contoh Siswa', 'siswa', 'rahasia123', '2026001', 'X RPL 1'],
+      ['guru001', 'Contoh Guru', 'guru', 'rahasia123', '', '']
+    ]);
+    sheet['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, sheet, 'Template');
+
+    const help = XLSX.utils.aoa_to_sheet([
+      ['Petunjuk pengisian'],
+      ['1. Hapus dua baris contoh, lalu isi data Anda mulai dari baris 2.'],
+      ['2. Peran: siswa, guru, kepsek, atau admin.'],
+      ['3. Password minimal 8 karakter. Pengguna wajib menggantinya saat pertama login.'],
+      ['4. NIS dan Kelas hanya untuk siswa. NIS kosong = memakai Username.'],
+      ['5. Nama Kelas harus sama persis dengan yang ada di menu Kelas.'],
+      [`6. Maksimal ${IMPORT_MAX_ROWS} baris per file.`]
+    ]);
+    help['!cols'] = [{ wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, help, 'Petunjuk');
+
+    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename="template-impor-pengguna.xlsx"');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.send(buffer);
+  } catch (e) {
+    console.error('Template gagal:', e);
+    res.status(500).json({ error: 'Gagal membuat template' });
+  }
+});
+
+// Ambil nilai kolom dengan nama header yang fleksibel
+function pickCol(row, names) {
+  for (const k of Object.keys(row)) {
+    const nk = String(k).trim().toLowerCase().replace(/[^a-z]/g, '');
+    if (names.includes(nk)) return String(row[k] == null ? '' : row[k]).trim();
+  }
+  return '';
+}
+
+// Impor pengguna: body JSON { file: <isi file .xlsx dalam base64> }
+router.post('/users/import', async (req, res) => {
+  const b64 = typeof req.body.file === 'string' ? req.body.file : '';
+
+  if (!b64) {
+    return bad(res, 'File Excel belum dipilih.');
+  }
+
+  let rows;
+
+  try {
+    const buf = Buffer.from(b64, 'base64');
+
+    if (!buf.length || buf.length > IMPORT_MAX_BYTES) {
+      return bad(res, 'Ukuran file tidak valid (maksimal 500 KB).');
+    }
+
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+  } catch (e) {
+    console.error('Baca Excel gagal:', e);
+    return bad(res, 'File tidak bisa dibaca. Pastikan formatnya .xlsx dari template.');
+  }
+
+  rows = rows.filter((r) => Object.values(r).some((v) => String(v).trim() !== ''));
+
+  if (!rows.length) {
+    return bad(res, 'Tidak ada data pada file.');
+  }
+
+  if (rows.length > IMPORT_MAX_ROWS) {
+    return bad(res, `Maksimal ${IMPORT_MAX_ROWS} baris per file. File ini berisi ${rows.length} baris.`);
+  }
+
+  try {
+    const classRows = await db.prepare('SELECT id, name FROM classes').all();
+    const classMap = new Map(classRows.map((c) => [String(c.name).trim().toLowerCase(), c.id]));
+
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const line = i + 2;
+
+      const username = pickCol(row, ['username', 'user']).slice(0, 50);
+      const name = pickCol(row, ['namalengkap', 'nama', 'name']).slice(0, 120);
+      const roleKey = pickCol(row, ['peran', 'role']).toLowerCase();
+      const password = pickCol(row, ['password', 'katasandi']);
+      const nisRaw = pickCol(row, ['nis']).slice(0, 30);
+      const className = pickCol(row, ['kelas', 'class']);
+
+      const fail = (msg) => {
+        failed++;
+        errors.push({ row: line, username, message: msg });
+      };
+
+      if (!/^[A-Za-z0-9_.@-]{3,50}$/.test(username)) {
+        fail('Username harus 3-50 karakter (huruf, angka, . _ @ -).');
+        continue;
+      }
+
+      if (!name) {
+        fail('Nama wajib diisi.');
+        continue;
+      }
+
+      const r = IMPORT_ROLES[roleKey];
+
+      if (!r) {
+        fail('Peran harus siswa, guru, kepsek, atau admin.');
+        continue;
+      }
+
+      if (password.length < 8) {
+        fail('Password minimal 8 karakter.');
+        continue;
+      }
+
+      let classId = null;
+
+      if (r === 'siswa' && className) {
+        classId = classMap.get(className.toLowerCase()) || null;
+
+        if (!classId) {
+          fail(`Kelas "${className}" tidak ditemukan.`);
+          continue;
+        }
+      }
+
+      const ada = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+
+      if (ada) {
+        skipped++;
+        errors.push({ row: line, username, message: 'Dilewati: username sudah terdaftar.' });
+        continue;
+      }
+
+      let info = null;
+
+      try {
+        info = await insertReturnId(
+          'INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)',
+          [username, bcrypt.hashSync(password, 10), name, r]
+        );
+
+        if (r === 'siswa') {
+          await insertReturnId(
+            'INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)',
+            [info.lastInsertRowid, nisRaw || username, classId]
+          );
+        }
+
+        created++;
+      } catch (e) {
+        if (info && info.lastInsertRowid) {
+          try {
+            await db.prepare('DELETE FROM users WHERE id = ?').run(info.lastInsertRowid);
+          } catch (e2) {
+            console.error(e2);
+          }
+        }
+
+        console.error(e);
+        fail(String(e && e.message).includes('UNIQUE')
+          ? 'Username atau NIS sudah dipakai.'
+          : 'Gagal menyimpan data.');
+      }
+    }
+
+    res.json({ created, skipped, failed, errors });
+  } catch (e) {
+    return handleDb(res, e);
+  }
+});
+
+// ===== EXPORT NILAI & ABSENSI KE EXCEL =====
+// Memakai buildReport (sama dengan E-Rapor) supaya angkanya selalu cocok dengan rapor.
+// Query: ?class_id=<id kelas, kosong = semua kelas>&semester=<mis. "Ganjil 2026/2027", kosong = bawaan rapor>
+const EXPORT_MAX_STUDENTS = 1500;
+
+// Cegah "formula injection" bila ada teks yang diawali = + - @
+const xcell = (v) => {
+  if (v == null) return '';
+  if (typeof v !== 'string') return v;
+  return /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+};
+const round1 = (n) => (n == null || isNaN(n) ? '' : Math.round(Number(n) * 10) / 10);
+
+async function collectReports(req) {
+  const classId = Number(req.query.class_id) || null;
+  const semester = req.query.semester ? String(req.query.semester).slice(0, 40) : null;
+
+  let sql = `
+    SELECT st.user_id, st.nis, u.name, c.name AS class_name
+    FROM students st
+    JOIN users u ON u.id = st.user_id
+    JOIN classes c ON c.id = st.class_id
+    WHERE st.class_id IS NOT NULL
+  `;
+  const p = [];
+
+  if (classId) {
+    sql += ' AND st.class_id = ?';
+    p.push(classId);
+  }
+
+  sql += ' ORDER BY c.name, u.name';
+
+  const students = await db.prepare(sql).all(...p);
+
+  if (!students.length) return { error: 'Tidak ada siswa pada kelas yang dipilih.' };
+  if (students.length > EXPORT_MAX_STUDENTS) {
+    return { error: `Terlalu banyak siswa (${students.length}). Pilih satu kelas saja.` };
+  }
+
+  const items = [];
+
+  for (let i = 0; i < students.length; i += 10) {
+    const chunk = students.slice(i, i + 10);
+    const reps = await Promise.all(
+      chunk.map((s) => buildReport(Number(s.user_id), semester).catch(() => null))
+    );
+    chunk.forEach((s, j) => items.push({ s, d: reps[j] }));
+  }
+
+  const first = items.find((x) => x.d && x.d.semester);
+  return {
+    items,
+    semester: first ? first.d.semester : (semester || '-'),
+    kkm: first ? first.d.kkm : '-'
+  };
+}
+
+function sendXlsx(res, wb, base) {
+  const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  res.setHeader('Content-Disposition', `attachment; filename="${base}-${stamp}.xlsx"`);
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.send(buffer);
+}
+
+function addSheet(wb, name, rows, widths) {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  if (widths) ws['!cols'] = widths.map((w) => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, name);
+}
+
+router.get('/export/nilai', async (req, res) => {
+  try {
+    const r = await collectReports(req);
+    if (r.error) return bad(res, r.error);
+
+    const perMapel = [];
+    const ringkas = [];
+
+    for (const { s, d } of r.items) {
+      const subjects = d && Array.isArray(d.subjects) ? d.subjects : [];
+      const finals = subjects.map((x) => x.final).filter((v) => v != null);
+      const rata = finals.length ? finals.reduce((a, b) => a + Number(b), 0) / finals.length : null;
+      const bawah = subjects.filter((x) => x.passed === false).map((x) => x.subject);
+
+      subjects.forEach((x) => {
+        perMapel.push({
+          NIS: xcell(s.nis || ''),
+          Nama: xcell(s.name),
+          Kelas: xcell(s.class_name),
+          'Mata Pelajaran': xcell(x.subject),
+          Guru: xcell(x.teacher || ''),
+          'Nilai Akhir': round1(x.final),
+          Predikat: x.predikat || '',
+          Status: x.passed == null ? 'Belum ada nilai' : x.passed ? 'Tuntas' : 'Belum tuntas'
+        });
+      });
+
+      ringkas.push({
+        NIS: xcell(s.nis || ''),
+        Nama: xcell(s.name),
+        Kelas: xcell(s.class_name),
+        'Jumlah Mapel': subjects.length,
+        'Rata-rata': round1(rata),
+        'Jumlah di Bawah KKM': bawah.length,
+        'Mapel di Bawah KKM': xcell(bawah.join(', '))
+      });
+    }
+
+    const wb = XLSX.utils.book_new();
+    addSheet(wb, 'Ringkasan Siswa', ringkas, [14, 30, 14, 13, 11, 19, 40]);
+    addSheet(
+      wb,
+      'Nilai per Mapel',
+      perMapel.length ? perMapel : [{ Info: 'Belum ada data nilai.' }],
+      [14, 30, 14, 28, 26, 12, 10, 16]
+    );
+    addSheet(wb, 'Info', [
+      { Keterangan: 'Semester', Isi: r.semester },
+      { Keterangan: 'KKM', Isi: r.kkm },
+      { Keterangan: 'Jumlah siswa', Isi: r.items.length }
+    ], [18, 30]);
+
+    sendXlsx(res, wb, 'nilai');
+  } catch (e) {
+    console.error('Export nilai gagal:', e);
+    res.status(500).json({ error: 'Gagal mengexport nilai' });
+  }
+});
+
+router.get('/export/absensi', async (req, res) => {
+  try {
+    const r = await collectReports(req);
+    if (r.error) return bad(res, r.error);
+
+    const rows = r.items.map(({ s, d }) => {
+      const a = (d && d.attendance) || { hadir: 0, izin: 0, sakit: 0, alpa: 0 };
+      const hadir = Number(a.hadir) || 0;
+      const izin = Number(a.izin) || 0;
+      const sakit = Number(a.sakit) || 0;
+      const alpa = Number(a.alpa) || 0;
+      const total = hadir + izin + sakit + alpa;
+
+      return {
+        NIS: xcell(s.nis || ''),
+        Nama: xcell(s.name),
+        Kelas: xcell(s.class_name),
+        Hadir: hadir,
+        Izin: izin,
+        Sakit: sakit,
+        Alpa: alpa,
+        'Total Pertemuan': total,
+        '% Kehadiran': total ? Math.round((hadir / total) * 100) : ''
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    addSheet(wb, 'Rekap Absensi', rows, [14, 30, 14, 8, 8, 8, 8, 16, 13]);
+    addSheet(wb, 'Info', [
+      { Keterangan: 'Semester', Isi: r.semester },
+      { Keterangan: 'Jumlah siswa', Isi: r.items.length },
+      { Keterangan: 'Catatan', Isi: 'Angka sama dengan yang tercetak di E-Rapor (jumlah catatan absensi per mata pelajaran).' }
+    ], [18, 70]);
+
+    sendXlsx(res, wb, 'absensi');
+  } catch (e) {
+    console.error('Export absensi gagal:', e);
+    res.status(500).json({ error: 'Gagal mengexport absensi' });
+  }
+});
+
+// ===== E-RAPOR (admin melihat rapor siswa mana pun) =====
+router.get('/rapor/:userId', async (req, res) => {
+  try {
+    const semester = req.query.semester ? String(req.query.semester).slice(0, 40) : null;
+    const d = await buildReport(Number(req.params.userId), semester);
+
+    if (!d) {
+      return res.status(404).json({ error: 'Data siswa tidak ditemukan' });
+    }
+
+    res.json(d);
   } catch (e) {
     return handleDb(res, e);
   }

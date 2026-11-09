@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -182,6 +181,16 @@ const NEW_TABLES = [
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
 
+  // Tahun ajaran & semester
+  `CREATE TABLE IF NOT EXISTS academic_years (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    semester TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (name, semester)
+  )`,
+
   // SESI ABSENSI SISWA
   `CREATE TABLE IF NOT EXISTS attendance_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,7 +226,10 @@ const NEW_INDEXES = [
    ON visit_log (user_id, visited_at)`,
 
   `CREATE INDEX IF NOT EXISTS idx_attendance_sessions_teaching
-   ON attendance_sessions (teaching_id, date, status)`
+   ON attendance_sessions (teaching_id, date, status)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_students_class
+   ON students (class_id)`
 ];
 
 /* =====================================================
@@ -228,7 +240,16 @@ const MIGRATIONS = [
   `ALTER TABLE users ADD COLUMN must_change INTEGER DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN email TEXT`,
   `ALTER TABLE users ADD COLUMN phone TEXT`,
+  `ALTER TABLE teaching ADD COLUMN year_id INTEGER`,
   `ALTER TABLE reflections ADD COLUMN created_at TEXT`,
+
+  // Wali kelas: menyimpan users.id milik guru yang menjadi wali
+  `ALTER TABLE classes ADD COLUMN homeroom_teacher_id INTEGER`,
+
+  // Kelulusan: status siswa (aktif / lulus), tanggal lulus, dan kelas terakhir
+  `ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'aktif'`,
+  `ALTER TABLE students ADD COLUMN graduated_at TEXT`,
+  `ALTER TABLE students ADD COLUMN graduated_from TEXT`,
 
   `UPDATE users SET active = 1 WHERE active IS NULL`,
   `UPDATE users SET must_change = 0 WHERE must_change IS NULL`,
@@ -320,6 +341,16 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
       }
     },
 
+    // Beberapa perintah sekaligus, atomik (semua berhasil atau semua batal).
+    // items: [[sql, [args]], [sql, [args]], ...]
+    batch: async (items) => {
+      const rs = await client.batch(
+        items.map(([sql, args = []]) => ({ sql, args })),
+        'write'
+      );
+      return rs.map((r) => ({ changes: r.rowsAffected || 0 }));
+    },
+
     transaction: (fn) => fn,
     syncDb: () => {}
   };
@@ -356,6 +387,14 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   db.isTurso = false;
   db._isTurso = false;
   db.ready = Promise.resolve();
+
+  // Padanan db.batch() untuk mode lokal
+  db.batch = async (items) =>
+    sqlite.transaction(() =>
+      items.map(([sql, args = []]) => ({
+        changes: sqlite.prepare(sql).run(...args).changes
+      }))
+    )();
 
   console.log('DB Mode: LOKAL');
 }

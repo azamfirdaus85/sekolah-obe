@@ -64,13 +64,20 @@
     admin: [
       ['dash', '🏠 Dashboard'],
       ['users', '👥 Pengguna'],
+      ['reset', '🔐 Permintaan Reset Password'],
       ['classes', '🏫 Kelas'],
+      ['naik', '⬆️ Kenaikan Kelas'],
+      ['periode', '📆 Tahun Ajaran'],
       ['subjects', '📚 Mata Pelajaran'],
       ['teaching', '👩‍🏫 Kelas Ajar'],
       ['jadwal', '🕘 Jadwal Pelajaran'],
       ['news', '📢 Pengumuman'],
       ['absen', '🗓️ Absensi'],
       ['monitor', '📊 Monitoring'],
+      ['rapor', '🧾 E-Rapor'],
+      ['export', '📥 Export Data'],
+      ['log', '📜 Log Aktivitas'],
+      ['backup', '💾 Backup Data'],
       ['akademik', '🎓 Akademik'],
       ['administrasi', '🗂️ Administrasi'],
       ['pengaduan', '📬 Layanan Pengaduan'],
@@ -79,6 +86,8 @@
     guru: [
       ['dash', '🏠 Dashboard'],
       ['mycls', '📚 Kelas Ajar Saya'],
+      ['wali', '🏫 Wali Kelas'],
+      ['lms', '🗂️ Materi & Tugas'],
       ['absen', '🗓️ Absensi'],
       ['akademik', '🎓 Akademik'],
       ['pengaduan', '📬 Layanan Pengaduan'],
@@ -87,6 +96,7 @@
     siswa: [
       ['dash', '🏠 Dashboard'],
       ['report', '📈 Nilai & Capaian'],
+      ['lms', '🗂️ Materi & Tugas'],
       ['absen', '🗓️ Absensi Saya'],
       ['akademik', '🎓 Akademik'],
       ['pengaduan', '📬 Layanan Pengaduan'],
@@ -95,6 +105,7 @@
     kepsek: [
       ['dash', '🏠 Dashboard'],
       ['monitor', '📊 Monitoring Capaian'],
+      ['rapor', '🧾 E-Rapor'],
       ['absen', '🗓️ Absensi'],
       ['akademik', '🎓 Akademik'],
       ['administrasi', '🗂️ Administrasi'],
@@ -127,7 +138,11 @@
               <div class="field"><label>Password</label><input name="password" type="password" required></div>
               <p class="form-msg">${esc(msg)}</p>
               <button class="btn full" type="submit">Masuk</button>
-            </form>
+            <button type="button" class="btn ghost full"
+  data-action="forgotPw" style="margin-top:10px">
+  Lupa Password?
+</button>
+              </form>
           </div>
         </section>
       </div>`;
@@ -166,6 +181,7 @@
           <header class="top">
             <button class="burger" data-action="toggleSide">☰</button>
             <span class="who">${esc(me.name)}<em>${roleLabel(me.role)}</em></span>
+            <button class="btn sm ghost" data-action="bell" title="Notifikasi" style="position:relative">🔔<span id="bellCount" style="display:none;position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-size:.68rem;font-weight:700;line-height:18px;text-align:center"></span></button>
             <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
             <button class="btn sm" data-action="logout">Keluar →</button>
           </header>
@@ -202,10 +218,10 @@
   }
 
   async function dash() {
-    const [news, ring] = await Promise.all([api('/announcements'), api('/dashboard/ringkasan').catch(() => null)]);
+    const [news, ring, grafik] = await Promise.all([api('/announcements'), api('/dashboard/ringkasan').catch(() => null), api('/dashboard/grafik').catch(() => null)]);
     let stats = '';
     if (me.role === 'admin') {
-      const s = await api('/admin/stats');
+      const [s, per] = await Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]);
       const c = (icon, l, v, color) => `
         <div class="card stat" style="border-left:4px solid ${color}">
           <div style="display:flex;justify-content:space-between;align-items:start">
@@ -213,7 +229,7 @@
             <span style="font-size:2rem;background:${color}1a;width:52px;height:52px;display:grid;place-items:center;border-radius:14px">${icon}</span>
           </div>
         </div>`;
-      stats = `<div class="cards">
+      stats = `<p class="muted" style="margin:1rem 0 0">📆 Periode aktif: <b>${per ? esc(per.semester) + ' ' + esc(per.name) : 'belum diatur'}</b> ${per ? '' : '<a href="#/periode">Atur sekarang</a>'}</p><div class="cards">
         ${c('👥','Siswa', s.siswa, '#6366f1')}
         ${c('👩‍🏫','Guru', s.guru, '#10b981')}
         ${c('🏫','Kelas', s.kelas, '#f59e0b')}
@@ -224,7 +240,7 @@
     const list = news.length
       ? news.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p></div>`).join('')
       : '<p class="muted">Belum ada pengumuman.</p>';
-    const home = homeHtml(ring);
+    const home = homeHtml(ring) + chartsHtml(grafik);
     return `
       <div style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
         <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
@@ -248,7 +264,14 @@
     return `<h1>Pengguna</h1>
       <div style="margin-bottom:15px">
         <a class="btn" href="/api/admin/users/export">📥 Export Excel</a>
+        <a class="btn ghost" href="/api/admin/users/template">📄 Unduh Template Impor</a>
       </div>
+      <div class="card"><h2>Impor dari Excel</h2>
+        <p class="muted small" style="margin-bottom:.8rem">Unduh template, isi data siswa atau guru, lalu unggah di sini. Maksimal 100 baris per file.</p>
+        <form class="form inline" data-form="importUsers">
+          <div class="field"><label>File Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div>
+          <button class="btn" type="submit">Impor</button>
+        </form></div>
       <div class="card"><h2>Tambah Pengguna</h2>
         <form class="form inline" data-form="post" data-url="/admin/users">
           <div class="field"><label>Username</label><input name="username" required></div>
@@ -263,14 +286,100 @@
   }
 
   async function classesView() {
-    const list = await api('/admin/classes');
+    const [list, gurus] = await Promise.all([api('/admin/classes'), api('/admin/users?role=guru')]);
+    const waliOpts = (c) => '<option value="">- Belum ada -</option>' + gurus
+      .filter((g) => g.active || String(g.id) === String(c.homeroom_teacher_id))
+      .map((g) => `<option value="${esc(g.id)}" ${String(g.id) === String(c.homeroom_teacher_id) ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
     return `<h1>Kelas</h1>
       <div class="card"><form class="form inline" data-form="post" data-url="/admin/classes">
         <div class="field"><label>Nama kelas</label><input name="name" placeholder="X RPL 1" required></div>
         <div class="field"><label>Tahun ajaran</label><input name="year" placeholder="2026/2027"></div>
         <button class="btn" type="submit">Tambah</button></form></div>
-      <div class="card"><table><thead><tr><th>Kelas</th><th>Tahun</th><th class="num">Siswa</th><th></th></tr></thead><tbody>${list
-        .map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.year || '')}</td><td class="num">${c.students}</td><td><div class="actions">${delBtn('/admin/classes/' + c.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
+      <div class="card"><table><thead><tr><th>Kelas</th><th>Tahun</th><th>Wali Kelas</th><th class="num">Siswa</th><th></th></tr></thead><tbody>${list
+        .map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.year || '')}</td><td><select data-change="setHomeroom" data-id="${c.id}">${waliOpts(c)}</select></td><td class="num">${c.students}</td><td><div class="actions">${delBtn('/admin/classes/' + c.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // ---------- KENAIKAN KELAS & KELULUSAN (admin) ----------
+  async function naikView(fromId) {
+    const classes = await api('/admin/classes');
+    const from = classes.find((c) => String(c.id) === String(fromId));
+    const [students, alumni] = await Promise.all([
+      from ? api('/admin/classes/' + from.id + '/students') : Promise.resolve([]),
+      api('/admin/alumni')
+    ]);
+
+    const fromOpts = '<option value="">-- Pilih kelas asal --</option>' + classes
+      .map((c) => `<option value="${esc(c.id)}" ${from && from.id === c.id ? 'selected' : ''}>${esc(c.name)} (${c.students} siswa)</option>`).join('');
+
+    let proses = '';
+    if (from) {
+      const toOpts = '<option value="">-- Pilih tujuan --</option>' + classes
+        .filter((c) => c.id !== from.id)
+        .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')
+        + '<option value="LULUS">🎓 Lulus (keluar dari sekolah)</option>';
+      const rows = students.length
+        ? students.map((s) => `<tr><td><input type="checkbox" class="pick-siswa" value="${s.id}" checked></td><td>${esc(s.nis || '')}</td><td>${esc(s.name)}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="muted">Tidak ada siswa di kelas ini.</td></tr>';
+      proses = `<div class="card"><h2>Siswa kelas ${esc(from.name)}</h2>
+        <form class="form" data-form="promote" data-from="${from.id}">
+          <div class="field"><label>Pindahkan ke</label><select name="target" required>${toOpts}</select></div>
+          <div class="field"><label><input type="checkbox" name="deactivate"> Nonaktifkan akun siswa yang lulus</label></div>
+          <div class="table-wrap"><table><thead><tr><th style="width:36px"><input type="checkbox" data-action="toggleAllSiswa" checked></th><th>NIS</th><th>Nama</th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div><button class="btn" type="submit">Proses</button></div>
+        </form></div>`;
+    }
+
+    const alumniRows = alumni.length
+      ? alumni.map((a) => `<tr><td>${esc(a.nis || '')}</td><td>${esc(a.name)}</td><td>${esc(a.graduated_from || '-')}</td><td>${esc(a.graduated_at || '-')}</td>
+          <td><select data-change="restoreAlumni" data-id="${a.id}"><option value="">Kembalikan ke kelas...</option>${classes.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select></td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">Belum ada alumni.</td></tr>';
+
+    return `<h1>Kenaikan Kelas & Kelulusan</h1>
+      <p class="muted">Pindahkan siswa satu kelas ke kelas baru sekaligus, atau luluskan. Cetak E-Rapor semester ini lebih dulu sebelum memproses, karena setelah siswa pindah, rapor semester lamanya bisa tidak terbaca lagi.</p>
+      <div class="card"><div class="field"><label>Kelas asal</label><select data-change="pickNaikKelas">${fromOpts}</select></div></div>
+      ${proses}
+      <div class="card"><h2>Alumni</h2><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas terakhir</th><th>Tanggal lulus</th><th></th></tr></thead><tbody>${alumniRows}</tbody></table></div></div>`;
+  }
+
+  // ---------- WALI KELAS (guru) ----------
+  async function waliView() {
+    const list = await api('/guru/homeroom');
+    if (!list.length) {
+      return '<h1>Wali Kelas</h1><div class="card"><p class="muted">Anda belum ditetapkan sebagai wali kelas. Hubungi admin.</p></div>';
+    }
+    return '<h1>Wali Kelas</h1>' + list.map((c) => {
+      const rows = c.students.length
+        ? c.students.map((s) => {
+            const a = s.attendance || {};
+            return `<tr><td>${esc(s.nis || '')}</td><td>${esc(s.name)}</td>
+              <td class="num">${fmt(s.average)}</td>
+              <td>${s.below_kkm.length ? `<span class="pill low">${esc(s.below_kkm.join(', '))}</span>` : (s.average == null ? '<span class="pill na">Belum ada nilai</span>' : '<span class="pill ok">Aman</span>')}</td>
+              <td class="num">${a.hadir || 0}</td><td class="num">${a.izin || 0}</td><td class="num">${a.sakit || 0}</td>
+              <td class="num ${a.alpa ? 'low-score' : ''}">${a.alpa || 0}</td>
+              <td class="num">${s.attendance_pct == null ? '-' : s.attendance_pct + '%'}</td></tr>`;
+          }).join('')
+        : '<tr><td colspan="9" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+      return `<div class="card"><h2>${esc(c.name)}</h2>
+        <p class="muted">${c.total} siswa &bull; ${c.under_kkm} siswa punya nilai di bawah KKM ${c.kkm}</p>
+        <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Rata-rata</th><th>Di bawah KKM</th><th class="num">Hadir</th><th class="num">Izin</th><th class="num">Sakit</th><th class="num">Alpa</th><th class="num">% Hadir</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }).join('');
+  }
+
+  async function periodeView() {
+    const list = await api('/admin/periods');
+    const rows = list.length
+      ? list.map((p) => `<tr>
+          <td><b>${esc(p.semester)} ${esc(p.name)}</b></td>
+          <td>${p.is_active ? '<span class="pill ok">Aktif</span>' : '<span class="pill na">Nonaktif</span>'}</td>
+          <td class="num">${p.used}</td>
+          <td><div class="actions">${p.is_active ? '' : `<button class="btn sm ghost" data-action="activatePeriod" data-id="${p.id}">Jadikan Aktif</button>${delBtn('/admin/periods/' + p.id)}`}</div></td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">Belum ada periode.</td></tr>';
+    return `<h1>Tahun Ajaran</h1><p class="muted">Periode yang aktif otomatis dipakai saat membuat Kelas Ajar baru.</p>
+      <div class="card"><h2>Tambah Periode</h2><form class="form inline" data-form="post" data-url="/admin/periods">
+        <div class="field"><label>Tahun ajaran</label><input name="name" placeholder="2026/2027" required></div>
+        <div class="field"><label>Semester</label><select name="semester"><option>Ganjil</option><option>Genap</option></select></div>
+        <button class="btn" type="submit">Tambah</button></form></div>
+      <div class="card"><table><thead><tr><th>Periode</th><th>Status</th><th class="num">Kelas Ajar</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   async function subjectsView() {
@@ -291,7 +400,7 @@
         <div class="field"><label>Mata pelajaran</label><select name="subject_id" required>${opts(subjects, 'id', (s) => s.name, 'Pilih')}</select></div>
         <div class="field"><label>Kelas</label><select name="class_id" required>${opts(classes, 'id', (c) => c.name, 'Pilih')}</select></div>
         <div class="field"><label>Guru</label><select name="teacher_id" required>${opts(users, 'id', (u) => u.name, 'Pilih')}</select></div>
-        <div class="field"><label>Semester</label><input name="semester" placeholder="Ganjil 2026/2027" required></div>
+        <div class="field"><label>Semester (kosong = periode aktif)</label><input name="semester" placeholder="Otomatis"></div>
         <button class="btn" type="submit">Tambah</button></form></div>
       <div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th>Semester</th><th></th></tr></thead><tbody>${list
         .map((t) => `<tr><td>${esc(t.subject_name)}</td><td>${esc(t.class_name)}</td><td>${esc(t.teacher_name)}</td><td>${esc(t.semester)}</td><td><div class="actions">${delBtn('/admin/teaching/' + t.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
@@ -364,7 +473,7 @@
 
   async function reportView() {
     const r = await api('/siswa/report');
-    const head = `<h1>Nilai & Capaian</h1><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
+    const head = `<h1>Nilai & Capaian</h1><p><button class="btn" data-action="bukaRapor" data-url="/siswa/rapor">🖨️ Cetak E-Rapor</button></p><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
     if (!r.subjects.length) return head + '<div class="card"><p class="muted">Belum ada mata pelajaran.</p></div>';
     return head + r.subjects.map((s) => `<div class="card"><h2>${esc(s.subject)} - ${esc(s.teacher)}</h2><p>Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
       <table><thead><tr><th>CP</th><th>Deskripsi</th><th>Capaian</th></tr></thead><tbody>${s.outcomes.map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td>${bar(o.score, r.kkm)}</td></tr>`).join('')}</tbody></table></div>`).join('');
@@ -550,6 +659,46 @@
       <div class="card"><h2>🕑 Terakhir Dikunjungi</h2>${terakhir}</div></div>`;
   }
 
+  /* ===================== GRAFIK DASHBOARD ===================== */
+  function hbar(label, pct, text, color) {
+    const w = Math.max(0, Math.min(100, pct || 0));
+    return `<div style="display:grid;grid-template-columns:minmax(80px,34%) 1fr 56px;gap:.6rem;align-items:center;margin:.5rem 0;font-size:.82rem">
+      <span title="${esc(label)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</span>
+      <div style="background:rgba(100,116,139,.2);border-radius:99px;height:10px;overflow:hidden"><i style="display:block;height:100%;width:${w}%;background:${color};border-radius:99px"></i></div>
+      <b style="text-align:right">${esc(text)}</b></div>`;
+  }
+
+  function chartsHtml(g) {
+    if (!g) return '';
+    const nilai = g.nilai.rows.length
+      ? g.nilai.rows.map((r) => hbar(r.label, r.value, fmt(r.value), r.value >= g.kkm ? '#10b981' : '#ef4444')).join('') +
+        `<p class="muted small" style="margin-top:.6rem">Hijau = di atas KKM (${g.kkm}), merah = di bawah KKM.</p>`
+      : '<p class="muted">Belum ada data nilai.</p>';
+
+    let hadir;
+    if (g.kehadiran.type === 'ringkas') {
+      const colors = { hadir: '#10b981', izin: '#f59e0b', sakit: '#6366f1', alpa: '#ef4444' };
+      const total = g.kehadiran.rows.reduce((a, r) => a + r.count, 0);
+      hadir = total
+        ? g.kehadiran.rows.map((r) => hbar(r.label, r.pct, r.count + ' (' + r.pct + '%)', colors[r.key] || '#6366f1')).join('')
+        : '<p class="muted">Belum ada data absensi.</p>';
+    } else {
+      const any = g.kehadiran.rows.some((r) => r.pct != null);
+      hadir = any
+        ? `<div style="display:flex;align-items:flex-end;gap:.5rem;height:150px;margin-top:.6rem">${g.kehadiran.rows.map((r) => `
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;font-size:.7rem;min-width:0">
+              <span>${r.pct == null ? '-' : r.pct + '%'}</span>
+              <i style="display:block;width:100%;max-width:36px;height:${r.pct == null ? 2 : Math.max(2, r.pct)}px;background:#6366f1;border-radius:6px 6px 0 0"></i>
+              <small class="muted" style="white-space:nowrap">${esc(r.label)}</small></div>`).join('')}</div>
+          <p class="muted small" style="margin-top:.6rem">Persentase siswa berstatus hadir per hari.</p>`
+        : '<p class="muted">Belum ada data absensi 7 hari terakhir.</p>';
+    }
+
+    return `<div class="grid2">
+      <div class="card"><h2>📊 ${esc(g.nilai.title)}</h2>${nilai}</div>
+      <div class="card"><h2>📅 ${esc(g.kehadiran.title)}</h2>${hadir}</div></div>`;
+  }
+
   function logVisit(view, hash) {
     const found = MENUS[me.role].find(([k]) => k === view);
     const label = found ? found[1] : VISIT_LABEL[view];
@@ -727,11 +876,382 @@
       <div class="card"><h2>Siswa Tidak Hadir</h2><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Mapel</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${absentRows}</tbody></table></div></div>`;
   }
 
+  /* ===================== E-RAPOR ===================== */
+  async function raporAdminView(cid) {
+    const d = await api('/monitor/rapor-daftar');
+    const kelas = d.classes.find((c) => String(c.id) === String(cid));
+    const list = kelas ? d.students.filter((u) => String(u.class_id) === String(kelas.id)) : d.students;
+    const rows = list.length
+      ? list.map((u) => `<tr><td>${esc(u.nis || '')}</td><td>${esc(u.name)}</td><td>${esc(u.class_name || '-')}</td>
+          <td><div class="actions"><button class="btn sm" data-action="bukaRapor" data-url="/monitor/rapor/${u.user_id}">🖨️ Cetak Rapor</button></div></td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">Tidak ada siswa.</td></tr>';
+    return `<h1>E-Rapor</h1><p class="muted">Pilih siswa untuk melihat rapor. Klik "Cetak / Simpan PDF", lalu pilih "Simpan sebagai PDF" pada jendela cetak.</p>
+      <div class="card"><div class="field"><label>Filter kelas</label><select data-change="pickRaporKelas"><option value="">Semua kelas</option>${d.classes.map((c) => `<option value="${c.id}" ${kelas && kelas.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div></div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  /* ===================== EXPORT NILAI & ABSENSI ===================== */
+  async function exportView() {
+    const [classes, periods] = await Promise.all([api('/admin/classes'), api('/admin/periods')]);
+    const classOpts = '<option value="">Semua kelas</option>' + classes
+      .map((c) => `<option value="${esc(c.id)}">${esc(c.name)} (${c.students} siswa)</option>`).join('');
+    const semOpts = '<option value="">Semester bawaan (sama seperti E-Rapor)</option>' + periods
+      .map((p) => { const v = `${p.semester} ${p.name}`; return `<option value="${esc(v)}">${esc(v)}${p.is_active ? ' (aktif)' : ''}</option>`; }).join('');
+    return `<h1>Export Data</h1>
+      <p class="muted">Unduh nilai dan absensi siswa dalam format Excel untuk laporan ke dinas atau arsip. Angkanya sama dengan yang tercetak di E-Rapor.</p>
+      <div class="card"><h2>Pilih Data</h2>
+        <div class="form inline">
+          <div class="field"><label>Kelas</label><select id="expKelas">${classOpts}</select></div>
+          <div class="field"><label>Semester</label><select id="expSemester">${semOpts}</select></div>
+        </div>
+        <div class="actions" style="margin-top:1rem">
+          <button class="btn" data-action="exportXlsx" data-type="nilai">📥 Export Nilai</button>
+          <button class="btn" data-action="exportXlsx" data-type="absensi">📥 Export Absensi</button>
+        </div>
+        <p class="muted small" style="margin-top:.8rem">Untuk sekolah besar, pilih satu kelas per unduhan agar prosesnya cepat. Siswa yang sudah lulus tidak ikut diekspor.</p>
+      </div>`;
+  }
+
+  /* ===================== MATERI & TUGAS (LMS) ===================== */
+  const lmsLink = (u) => (u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">🔗 Buka tautan</a>` : '');
+  const lmsText = (t) => (t ? `<p style="white-space:pre-wrap;margin:.4rem 0">${esc(t)}</p>` : '');
+
+  async function lmsView(id, tab, extra) {
+    const guru = me.role === 'guru';
+
+    if (!id) {
+      const d = await api('/lms/teachings');
+      const cards = d.rows.length
+        ? d.rows.map((t) => `<a class="card" href="#/lms/${t.id}"><h3>${esc(t.subject_name)}</h3>
+            <p class="muted">${guru ? esc(t.class_name) : esc(t.teacher_name)}</p>
+            <p class="muted small">${t.materials} materi &bull; ${t.tasks} tugas${!guru && t.pending ? ` &bull; <b>${t.pending} belum dikumpulkan</b>` : ''}</p>
+            <p class="muted small">${esc(t.semester)}</p></a>`).join('')
+        : `<p class="muted">${guru ? 'Belum ada kelas ajar. Hubungi admin.' : 'Belum ada mata pelajaran untuk kelas Anda.'}</p>`;
+      return `<h1>Materi & Tugas</h1><div class="grid2">${cards}</div>`;
+    }
+
+    // Guru: daftar pengumpulan satu tugas
+    if (guru && tab === 'tugas' && extra) {
+      const d = await api(`/lms/tasks/${extra}/submissions`);
+      const done = d.rows.filter((r) => r.submitted_at).length;
+      const rows = d.rows.length
+        ? d.rows.map((r) => `<tr><td>${esc(r.nis || '')}</td><td>${esc(r.name)}</td>
+            <td>${r.submitted_at ? (r.late ? '<span class="pill warn">Terlambat</span>' : '<span class="pill ok">Terkumpul</span>') : '<span class="pill na">Belum</span>'}</td>
+            <td class="small">${r.submitted_at ? esc(fdateTime(r.submitted_at)) : '-'}</td>
+            <td>${lmsText(r.answer)}${lmsLink(r.link)}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+      return `<p><a href="#/lms/${id}" class="btn sm ghost">&larr; Kembali</a></p>
+        <h1>${esc(d.task.title)}</h1>
+        <p class="muted">${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}${d.task.due_date ? ' &bull; Tenggat ' + fdate2(d.task.due_date) : ''} &bull; ${done} dari ${d.rows.length} siswa sudah mengumpulkan</p>
+        <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Waktu</th><th>Jawaban</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }
+
+    const d = await api('/lms/teaching/' + id);
+    const t = d.teaching;
+    const head = `<p><a href="#/lms" class="btn sm ghost">&larr; Kembali</a></p>
+      <h1>${esc(t.subject_name)} - ${esc(t.class_name)}</h1><p class="muted">${esc(t.teacher_name)} &bull; ${esc(t.semester)}</p>`;
+
+    const materials = d.materials.length
+      ? d.materials.map((m) => `<div class="news"><h3>${esc(m.title)}</h3><time>${fdate(m.created_at)}</time>${lmsText(m.description)}${lmsLink(m.link)}
+          ${guru ? delBtn('/lms/materials/' + m.id) : ''}</div>`).join('')
+      : '<p class="muted">Belum ada materi.</p>';
+
+    if (guru) {
+      const tasks = d.tasks.length
+        ? d.tasks.map((k) => `<div class="news"><h3>${esc(k.title)}</h3>
+            <time>${fdate(k.created_at)}${k.due_date ? ' &bull; Tenggat ' + fdate2(k.due_date) : ''}</time>${lmsText(k.instructions)}${lmsLink(k.link)}
+            <div class="actions" style="margin-top:.5rem"><a class="btn sm ghost" href="#/lms/${id}/tugas/${k.id}">Lihat pengumpulan (${k.submitted}/${k.total})</a>${delBtn('/lms/tasks/' + k.id)}</div></div>`).join('')
+        : '<p class="muted">Belum ada tugas.</p>';
+      return head + `
+        <div class="grid2">
+          <div class="card"><h2>Bagikan Materi</h2><form class="form" data-form="post" data-url="/lms/teaching/${id}/materials">
+            <div class="field"><label>Judul</label><input name="title" required maxlength="150"></div>
+            <div class="field"><label>Keterangan</label><textarea name="description" maxlength="2000"></textarea></div>
+            <div class="field"><label>Tautan (Drive, YouTube, dll.)</label><input name="link" type="url" maxlength="500" placeholder="https://"></div>
+            <div><button class="btn" type="submit">Bagikan</button></div></form></div>
+          <div class="card"><h2>Buat Tugas</h2><form class="form" data-form="post" data-url="/lms/teaching/${id}/tasks">
+            <div class="field"><label>Judul</label><input name="title" required maxlength="150"></div>
+            <div class="field"><label>Petunjuk</label><textarea name="instructions" required maxlength="3000"></textarea></div>
+            <div class="field"><label>Tenggat (opsional)</label><input name="due_date" type="date"></div>
+            <div class="field"><label>Tautan lampiran (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://"></div>
+            <div><button class="btn" type="submit">Buat Tugas</button></div></form></div>
+        </div>
+        <div class="card"><h2>📚 Materi</h2>${materials}</div>
+        <div class="card"><h2>📝 Tugas</h2>${tasks}</div>`;
+    }
+
+    const tasks = d.tasks.length
+      ? d.tasks.map((k) => {
+          const lewat = !k.my_at && k.due_date && k.due_date < d.today;
+          const status = k.my_at
+            ? `<span class="pill ok">Terkumpul</span>${k.my_late ? ' <span class="pill warn">Terlambat</span>' : ''}`
+            : lewat ? '<span class="pill low">Lewat tenggat</span>' : '<span class="pill na">Belum dikumpulkan</span>';
+          return `<div class="news"><div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(k.title)}</h3><span>${status}</span></div>
+            <time>${k.due_date ? 'Tenggat ' + fdate2(k.due_date) : 'Tanpa tenggat'}</time>${lmsText(k.instructions)}${lmsLink(k.link)}
+            ${k.my_at ? `<p class="muted small">Terakhir dikirim: ${esc(fdateTime(k.my_at))}</p>` : ''}
+            <form class="form" data-form="post" data-url="/lms/tasks/${k.id}/submit" style="margin-top:.6rem">
+              <div class="field"><label>Jawaban</label><textarea name="answer" maxlength="3000">${esc(k.my_answer || '')}</textarea></div>
+              <div class="field"><label>Tautan jawaban (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://" value="${esc(k.my_link || '')}"></div>
+              <div><button class="btn" type="submit">${k.my_at ? 'Kirim Ulang' : 'Kumpulkan'}</button></div></form></div>`;
+        }).join('')
+      : '<p class="muted">Belum ada tugas.</p>';
+    return head + `<div class="card"><h2>📚 Materi</h2>${materials}</div><div class="card"><h2>📝 Tugas</h2>${tasks}</div>`;
+  }
+
+  /* ===================== NOTIFIKASI (LONCENG) ===================== */
+  let notifCache = { items: [], unread: 0 };
+
+  function paintBell() {
+    const b = document.getElementById('bellCount');
+    if (!b) return;
+    const n = notifCache.unread || 0;
+    b.textContent = n > 99 ? '99+' : String(n);
+    b.style.display = n > 0 ? 'block' : 'none';
+  }
+
+  async function refreshBell() {
+    if (!me || me.must_change) return;
+    try {
+      notifCache = await api('/notif');
+      paintBell();
+    } catch (e) {}
+  }
+
+  async function openBell() {
+    await refreshBell();
+    const list = notifCache.items.length
+      ? notifCache.items.map((n) => `<a href="${esc(n.link)}" data-action="closeModal" style="display:block;padding:.6rem .5rem;border-bottom:1px solid rgba(100,116,139,.25);text-decoration:none;color:inherit;${n.unread ? 'background:rgba(99,102,241,.08);' : ''}">
+          <div style="display:flex;gap:.6rem;align-items:flex-start"><span style="font-size:1.2rem">${n.icon}</span>
+          <div style="min-width:0"><b>${esc(n.title)}</b>${n.unread ? ' <span class="pill info">Baru</span>' : ''}<br>
+          <span class="small">${esc(n.text)}</span><br><span class="muted small">${esc(ago(n.at))}</span></div></div></a>`).join('')
+      : '<p class="muted">Belum ada notifikasi.</p>';
+    openModal(`<h2>🔔 Notifikasi</h2><div style="max-height:60vh;overflow:auto;min-width:min(420px,80vw);margin:.6rem 0">${list}</div>
+      <div class="actions"><button class="btn ghost" data-action="closeModal">Tutup</button></div>`);
+    if (notifCache.unread > 0) {
+      api('/notif/read', 'POST', {}).then(() => { notifCache.unread = 0; paintBell(); }).catch(() => {});
+    }
+  }
+
+  setInterval(refreshBell, 60000);
+
+  /* ===================== LOG AKTIVITAS & BACKUP ===================== */
+  const fdateTime = (s) => {
+    const d = new Date(String(s).replace(' ', 'T') + 'Z');
+    return isNaN(d) ? '-' : d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  async function logView(p) {
+    const page = Math.max(1, Number(p) || 1);
+    const d = await api('/admin/logs?page=' + page);
+    const pages = Math.max(1, Math.ceil(d.total / d.per));
+    const rows = d.rows.length
+      ? d.rows.map((r) => `<tr><td style="white-space:nowrap">${esc(fdateTime(r.created_at))}</td><td>${esc(r.user_name || '-')}</td><td><b>${esc(r.action)}</b></td><td class="muted small">${esc(r.detail || '')}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">Belum ada aktivitas tercatat. Log mulai terisi setelah fitur ini dipasang.</td></tr>';
+    const nav = `<div class="actions" style="margin-top:1rem;align-items:center">
+        ${page > 1 ? `<a class="btn sm ghost" href="#/log/${page - 1}">&larr; Lebih baru</a>` : ''}
+        <span class="muted small">Halaman ${page} dari ${pages} &bull; ${d.total} catatan</span>
+        ${page < pages ? `<a class="btn sm ghost" href="#/log/${page + 1}">Lebih lama &rarr;</a>` : ''}
+      </div>`;
+    return `<h1>Log Aktivitas</h1>
+      <p class="muted">Catatan perubahan data yang dilakukan admin (tambah, ubah, hapus, impor, kenaikan kelas, export, backup). Password tidak pernah dicatat. Catatan lebih dari 180 hari dihapus otomatis.</p>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Waktu (WIB)</th><th>Admin</th><th>Aktivitas</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table></div>${nav}</div>`;
+  }
+
+  async function backupView() {
+    return `<h1>Backup Data</h1>
+      <p class="muted">Unduh cadangan seluruh data sekolah dalam satu file. Lakukan secara berkala, misalnya sebelum kenaikan kelas dan di akhir semester.</p>
+      <div class="card"><h2>Unduh Backup</h2>
+        <p class="muted small" style="margin-bottom:.8rem">Isi file: semua tabel (pengguna, kelas, nilai, absensi, pengumuman, dan lainnya) dalam format JSON.</p>
+        <button class="btn" data-action="backupDb">💾 Unduh Backup Sekarang</button>
+        <p class="muted small" style="margin-top:.8rem">⚠️ File ini berisi data lengkap termasuk password yang sudah di-hash. Simpan di tempat aman dan jangan dibagikan.</p>
+      </div>`;
+  }
+
+  async function downloadXlsx(path, btn) {
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Menyiapkan...';
+    try {
+      const res = await fetch('/api' + path, { credentials: 'same-origin' });
+      if (res.status === 401) { me = null; renderLogin('Sesi berakhir, silakan masuk lagi.'); return; }
+      if (!res.ok) {
+        let msg = 'Gagal mengunduh file.';
+        try { msg = (await res.json()).error || msg; } catch (e) {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = /filename="([^"]+)"/.exec(cd);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = m ? m[1] : 'export.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      toast('File berhasil diunduh');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  }
+
+  function closeRapor() {
+    const o = document.getElementById('raporView');
+    if (o) o.remove();
+  }
+
+  async function showRapor(url, semester) {
+    const d = await api(url + (semester ? '?semester=' + encodeURIComponent(semester) : ''));
+    let o = document.getElementById('raporView');
+    if (!o) {
+      o = document.createElement('div');
+      o.id = 'raporView';
+      document.body.appendChild(o);
+    }
+    o.dataset.url = url;
+
+    const semOpts = d.semesters.map((x) => `<option value="${esc(x)}" ${x === d.semester ? 'selected' : ''}>${esc(x)}</option>`).join('');
+    const rows = d.subjects.length
+      ? d.subjects.map((s, i) => `<tr><td class="c">${i + 1}</td><td><b>${esc(s.subject)}</b><br><small>${esc(s.teacher)}</small></td>
+          <td class="c">${fmt(s.final)}</td><td class="c"><b>${esc(s.predikat)}</b></td>
+          <td class="c">${s.passed == null ? '-' : s.passed ? 'Tuntas' : 'Belum tuntas'}</td><td>${esc(s.description)}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="c">Belum ada data nilai pada semester ini.</td></tr>';
+    const a = d.attendance;
+    const total = a.hadir + a.izin + a.sakit + a.alpa;
+    const pct = total ? Math.round((a.hadir / total) * 100) + '%' : '-';
+
+    o.innerHTML = `<style>
+        #raporView{position:fixed;inset:0;z-index:9999;background:#e5e7eb;overflow:auto;padding:1rem}
+        #raporView .rapor-bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;max-width:210mm;margin:0 auto 1rem}
+        #raporView .rapor-paper{background:#fff;color:#111;max-width:210mm;margin:0 auto;padding:16mm;box-shadow:0 4px 24px rgba(0,0,0,.18);font-size:12px;line-height:1.45}
+        #raporView h2{text-align:center;font-size:16px;margin:0}
+        #raporView .rapor-sub{text-align:center;margin:2px 0 14px;color:#444}
+        #raporView h3{font-size:13px;margin:16px 0 6px}
+        #raporView table{width:100%;border-collapse:collapse}
+        #raporView .rapor-tbl th,#raporView .rapor-tbl td{border:1px solid #333;padding:5px 7px;vertical-align:top;text-align:left}
+        #raporView .rapor-tbl th{background:#f1f5f9;text-align:center}
+        #raporView .rapor-tbl td.c{text-align:center}
+        #raporView .rapor-id td{padding:2px 6px;border:0}
+        #raporView .rapor-note{color:#555;font-size:11px;margin-top:6px}
+        #raporView .rapor-sign{display:flex;justify-content:space-between;gap:12px;margin-top:34px;text-align:center}
+        #raporView .rapor-sign div{flex:1}
+        #raporView .rapor-sign span{display:block;height:64px}
+        @page{size:A4;margin:12mm}
+        @media print{
+          body>*:not(#raporView){display:none!important}
+          #raporView{position:static!important;overflow:visible!important;background:#fff!important;padding:0!important}
+          #raporView .rapor-bar{display:none!important}
+          #raporView .rapor-paper{box-shadow:none!important;max-width:none!important;padding:0!important}
+        }
+      </style>
+      <div class="rapor-bar">
+        <select data-change="raporSemester">${semOpts || '<option>-</option>'}</select>
+        <button class="btn" data-action="cetakRapor">🖨️ Cetak / Simpan PDF</button>
+        <button class="btn ghost" data-action="tutupRapor">Tutup</button>
+      </div>
+      <div class="rapor-paper">
+        <h2>LAPORAN HASIL BELAJAR (E-RAPOR)</h2>
+        <p class="rapor-sub">SIAKAD OBE Sekolah</p>
+        <table class="rapor-id"><tbody>
+          <tr><td style="width:90px">Nama</td><td>: <b>${esc(d.student.name)}</b></td><td style="width:90px">Kelas</td><td>: ${esc(d.student.class_name)}</td></tr>
+          <tr><td>NIS</td><td>: ${esc(d.student.nis || '-')}</td><td>Semester</td><td>: ${esc(d.semester || '-')}</td></tr>
+        </tbody></table>
+        <h3>A. Capaian Akademik</h3>
+        <table class="rapor-tbl"><thead><tr><th style="width:28px">No</th><th>Mata Pelajaran</th><th style="width:52px">Nilai</th><th style="width:52px">Predikat</th><th style="width:76px">Status</th><th>Deskripsi Capaian</th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="rapor-note">Predikat: A = 90-100, B = 80-89, C = ${d.kkm}-79 (KKM ${d.kkm}), D = di bawah ${d.kkm}.</p>
+        <h3>B. Kehadiran</h3>
+        <table class="rapor-tbl"><thead><tr><th>Hadir</th><th>Izin</th><th>Sakit</th><th>Alpa</th><th>% Kehadiran</th></tr></thead>
+          <tbody><tr><td class="c">${a.hadir}</td><td class="c">${a.izin}</td><td class="c">${a.sakit}</td><td class="c">${a.alpa}</td><td class="c">${pct}</td></tr></tbody></table>
+        <p class="rapor-note">Dicetak pada ${esc(d.printed_at)}</p>
+        <div class="rapor-sign">
+          <div>Orang Tua / Wali<span></span>( ........................ )</div>
+          <div>Wali Kelas<span></span>( ${d.homeroom ? esc(d.homeroom) : '........................'} )</div>
+          <div>Kepala Sekolah<span></span>( ........................ )</div>
+        </div>
+      </div>`;
+    o.scrollTop = 0;
+  }
+async function resetView() {
+  const r = await api('/password-reset/admin/requests');
+  const list = r.data || [];
+
+  const rows = list.length
+    ? list.map((u) => `
+      <tr>
+        <td>${esc(u.username)}</td>
+        <td>${esc(u.name)}</td>
+        <td>${esc(roleLabel(u.role))}</td>
+        <td>${esc(u.email || '-')}</td>
+        <td>${fdate(u.created_at)}</td>
+        <td>
+          <div class="actions">
+            <button class="btn sm"
+              data-action="approveReset"
+              data-id="${u.id}">
+              Setujui
+            </button>
+
+            <button class="btn sm danger"
+              data-action="rejectReset"
+              data-id="${u.id}">
+              Tolak
+            </button>
+          </div>
+        </td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="6" class="muted">Belum ada permintaan reset password.</td></tr>';
+
+  return `
+    <h1>Permintaan Reset Password</h1>
+
+    <p class="muted">
+      Periksa permintaan siswa atau guru yang lupa password.
+    </p>
+
+    <div class="card">
+      <div class="actions" style="margin-bottom:15px">
+        <button class="btn" data-action="refreshReset">
+          ↻ Muat Ulang
+        </button>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Nama</th>
+              <th>Peran</th>
+              <th>Email</th>
+              <th>Tanggal</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
   const VIEWS = {
-    admin: { dash, users: usersView, classes: classesView, subjects: subjectsView, teaching: teachingAdminView, news: newsView, jadwal: jadwalAdminView, absen: absenPantau, akademik: akademikView, administrasi: administrasiView, pengaduan: pengaduanView, akun: akunView, monitor: monitorView, detail: detailView },
-    guru: { dash, mycls: myClasses, class: classDetail, absen: absenGuru, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
-    siswa: { dash, report: reportView, absen: absenSiswa, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
-    kepsek: { dash, monitor: monitorView, detail: detailView, absen: absenPantau, akademik: akademikView, administrasi: administrasiView, pengaduan: pengaduanView, akun: akunView }
+admin: {
+  dash, users: usersView, classes: classesView,
+  naik: naikView, periode: periodeView,
+  rapor: raporAdminView, export: exportView,
+  log: logView, backup: backupView,
+  subjects: subjectsView, teaching: teachingAdminView,
+  news: newsView, jadwal: jadwalAdminView,
+  absen: absenPantau, akademik: akademikView,
+  administrasi: administrasiView, pengaduan: pengaduanView,
+  akun: akunView, monitor: monitorView,
+  reset: resetView,
+  detail: detailView,
+},
+    guru: { dash, mycls: myClasses, wali: waliView, lms: lmsView, class: classDetail, absen: absenGuru, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
+    siswa: { dash, report: reportView, lms: lmsView, absen: absenSiswa, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
+    kepsek: { dash, rapor: raporAdminView, monitor: monitorView, detail: detailView, absen: absenPantau, akademik: akademikView, administrasi: administrasiView, pengaduan: pengaduanView, akun: akunView }
   };
 
   async function route() {
@@ -746,6 +1266,8 @@
       const html = await fn(id, tab, extra);
       app.innerHTML = layout(html, active);
       logVisit(view, location.hash);
+      paintBell();
+      refreshBell();
     } catch (e) {
       if (!me) return;
       app.innerHTML = layout(`<div class="card"><p class="err">${esc(e.message)}</p></div>`, active);
@@ -758,6 +1280,22 @@
       try { const r = await api('/login', 'POST', data); me = r.user; location.hash = '#/dash'; route(); }
       catch (e) { msg.textContent = e.message; }
     },
+    async forgotPw(data, f) {
+  const msg = f.querySelector('.form-msg');
+  msg.textContent = '';
+
+  try {
+    await api('/password-reset/request', 'POST', {
+      username: data.username,
+      email: data.email
+    });
+
+    msg.textContent = 'Permintaan reset berhasil dikirim. Hubungi admin sekolah.';
+    f.reset();
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+},
     async changePw(data, f) {
       const msg = f.querySelector('.form-msg'); msg.textContent = '';
       try { await api('/change-password', 'POST', data); me.must_change = false; closeModal(); toast('Password berhasil diganti'); route(); }
@@ -784,6 +1322,42 @@
       await api('/portal/pengaduan/' + f.dataset.id, 'PUT', data);
       closeModal(); toast('Tanggapan tersimpan'); route();
     },
+    async importUsers(data, f) {
+      const file = f.querySelector('input[type=file]').files[0];
+      if (!file) throw new Error('Pilih file Excel dulu.');
+      if (file.size > 400 * 1024) throw new Error('File terlalu besar (maksimal 400 KB).');
+      const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+        r.onerror = () => reject(new Error('Gagal membaca file.'));
+        r.readAsDataURL(file);
+      });
+      const r = await api('/admin/users/import', 'POST', { file: b64 });
+      const list = r.errors.length
+        ? `<div style="max-height:260px;overflow:auto;margin:.8rem 0"><table><thead><tr><th>Baris</th><th>Username</th><th>Keterangan</th></tr></thead><tbody>${r.errors.map((x) => `<tr><td>${x.row}</td><td>${esc(x.username || '-')}</td><td>${esc(x.message)}</td></tr>`).join('')}</tbody></table></div>`
+        : '';
+      openModal(`<h2>Hasil Impor</h2>
+        <p>✅ Berhasil: <b>${r.created}</b> &bull; ⏭️ Dilewati: <b>${r.skipped}</b> &bull; ❌ Gagal: <b>${r.failed}</b></p>${list}
+        <div class="actions"><button class="btn" data-action="closeImport">Selesai</button></div>`);
+    },
+    async promote(data, f) {
+      const ids = [...f.querySelectorAll('input.pick-siswa:checked')].map((i) => Number(i.value));
+      if (!ids.length) throw new Error('Pilih minimal satu siswa.');
+      if (!data.target) throw new Error('Pilih kelas tujuan.');
+      const lulus = data.target === 'LULUS';
+      if (!confirm(`Yakin ${lulus ? 'meluluskan' : 'memindahkan'} ${ids.length} siswa? Pastikan E-Rapor semester ini sudah dicetak.`)) return;
+      await api('/admin/promotion', 'POST', {
+        from_class_id: Number(f.dataset.from),
+        to_class_id: lulus ? null : Number(data.target),
+        graduate: lulus,
+        student_ids: ids,
+        deactivate: data.deactivate === 'on'
+      });
+      toast(lulus ? 'Siswa berhasil diluluskan' : 'Siswa berhasil dipindahkan');
+      const same = location.hash === '#/naik';
+      location.hash = '#/naik';
+      if (same) route();
+    },
     async post(data, f) { await api(f.dataset.url, 'POST', data); toast('Data tersimpan'); route(); },
     async saveScores(data, f) {
       const scores = [...f.querySelectorAll('input.score')].map((i) => ({ student_id: Number(i.dataset.sid), score: i.value === '' ? null : Number(i.value) }));
@@ -793,6 +1367,22 @@
   };
 
   const ACTIONS = {
+    bukaRapor(el) { return showRapor(el.dataset.url); },
+    cetakRapor() { window.print(); },
+    bell() { return openBell(); },
+    backupDb(el) { return downloadXlsx('/admin/backup', el); },
+    exportXlsx(el) {
+      const q = new URLSearchParams();
+      const k = document.getElementById('expKelas');
+      const s = document.getElementById('expSemester');
+      if (k && k.value) q.set('class_id', k.value);
+      if (s && s.value) q.set('semester', s.value);
+      const qs = q.toString();
+      return downloadXlsx(`/admin/export/${el.dataset.type}${qs ? '?' + qs : ''}`, el);
+    },
+    tutupRapor() { closeRapor(); },
+    toggleAllSiswa(el) { document.querySelectorAll('input.pick-siswa').forEach((i) => { i.checked = el.checked; }); },
+    closeImport() { closeModal(); route(); },
     async logout() { await api('/logout', 'POST', {}); me = null; location.hash = ''; renderLogin(); },
     toggleSide() { document.getElementById('side').classList.toggle('open'); },
     closeModal,
@@ -832,10 +1422,26 @@
       const pw = prompt('Password baru (min. 8 karakter):'); if (!pw) return;
       await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw }); toast('Password direset');
     },
-    async toggleActive(el) { await api('/admin/users/' + el.dataset.id, 'PUT', { active: el.dataset.active === '1' }); route(); }
+    async toggleActive(el) { await api('/admin/users/' + el.dataset.id, 'PUT', { active: el.dataset.active === '1' }); route(); },
+    async activatePeriod(el) { await api('/admin/periods/' + el.dataset.id + '/activate', 'PUT', {}); toast('Periode diaktifkan'); route(); }
   };
 
-  const CHANGES = { pickAssess(el) { location.hash = `#/class/${el.dataset.tid}/input/${el.value}`; } };
+  const CHANGES = {
+    raporSemester(el) { const o = document.getElementById('raporView'); if (o) showRapor(o.dataset.url, el.value).catch((e) => toast(e.message, false)); },
+    pickRaporKelas(el) { location.hash = '#/rapor/' + el.value; },
+    pickAssess(el) { location.hash = `#/class/${el.dataset.tid}/input/${el.value}`; },
+    setHomeroom(el) {
+      api('/admin/classes/' + el.dataset.id + '/homeroom', 'PUT', { teacher_id: el.value ? Number(el.value) : null })
+        .then(() => toast('Wali kelas tersimpan'))
+        .catch((e) => { toast(e.message, false); route(); });
+    },
+    pickNaikKelas(el) { location.hash = '#/naik/' + el.value; },
+    restoreAlumni(el) {
+      if (!el.value) return;
+      api('/admin/students/' + el.dataset.id + '/restore', 'PUT', { class_id: Number(el.value) })
+        .then(() => { toast('Alumni dikembalikan ke kelas'); route(); })
+        .catch((e) => { toast(e.message, false); route(); });
+    } };
 
   document.addEventListener('submit', async (e) => {
     const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault();
@@ -853,4 +1459,215 @@
     try { const r = await api('/me'); me = r.user; route(); }
     catch (e) { if (!me) renderLogin(); }
   })();
-})();
+})();  const ACTIONS = {
+    bukaRapor(el) { return showRapor(el.dataset.url); },
+    cetakRapor() { window.print(); },
+    bell() { return openBell(); },
+    backupDb(el) { return downloadXlsx('/admin/backup', el); },
+    exportXlsx(el) {
+      const q = new URLSearchParams();
+      const k = document.getElementById('expKelas');
+      const s = document.getElementById('expSemester');
+      if (k && k.value) q.set('class_id', k.value);
+      if (s && s.value) q.set('semester', s.value);
+      const qs = q.toString();
+      return downloadXlsx(`/admin/export/${el.dataset.type}${qs ? '?' + qs : ''}`, el);
+    },
+    tutupRapor() { closeRapor(); },
+    toggleAllSiswa(el) {
+      document.querySelectorAll('input.pick-siswa').forEach((i) => {
+        i.checked = el.checked;
+      });
+    },
+    closeImport() { closeModal(); route(); },
+    async logout() {
+      await api('/logout', 'POST', {});
+      me = null;
+      location.hash = '';
+      renderLogin();
+    },
+    toggleSide() {
+      document.getElementById('side').classList.toggle('open');
+    },
+    closeModal,
+    openRespond(el) {
+      const c = complaintsCache.find((x) => String(x.id) === String(el.dataset.id));
+      if (!c) return;
+      openModal(`<h2>${esc(c.subject)}</h2>
+        <p class="muted small">${esc(c.user_name)} (${esc(roleLabel(c.user_role))}) &bull; ${fdate(c.created_at)} &bull; ${esc(c.category)}</p>
+        <p style="margin:.8rem 0;max-width:520px;white-space:pre-wrap">${esc(c.body)}</p>
+        <form class="form" data-form="respondPengaduan" data-id="${c.id}">
+          <div class="field"><label>Status</label><select name="status">${['baru', 'diproses', 'selesai', 'ditolak'].map((s) => `<option value="${s}" ${c.status === s ? 'selected' : ''}>${CS_LABEL[s]}</option>`).join('')}</select></div>
+          <div class="field"><label>Tanggapan</label><textarea name="response" maxlength="1000">${esc(c.response || '')}</textarea></div>
+          <div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Tutup</button><button class="btn" type="submit">Simpan</button></div></form>`);
+    },
+    allHadir() {
+      document.querySelectorAll('.abs-status').forEach((s) => {
+        s.value = 'hadir';
+      });
+    },
+    async tutupSesi(el) {
+      if (!confirm('Tutup sesi absensi ini?')) return;
+      await api('/absensi/guru/sesi/tutup', 'POST', {
+        session_id: Number(el.dataset.id)
+      });
+      toast('Sesi absensi ditutup');
+      route();
+    },
+    async absenMandiri(el) {
+      if (!confirm('Kirim absensi sekarang? Absensi hanya dapat dilakukan satu kali.')) return;
+      await api('/absensi/siswa/absen', 'POST', {
+        session_id: Number(el.dataset.id)
+      });
+      toast('Absensi berhasil dicatat');
+      route();
+    },
+    refreshAbsen() { route(); },
+    async staffIn() {
+      await api('/absensi/staf/masuk', 'POST', {});
+      toast('Absen masuk tercatat');
+      route();
+    },
+    async staffOut() {
+      await api('/absensi/staf/pulang', 'POST', {});
+      toast('Absen pulang tercatat');
+      route();
+    },
+    pw() {
+      openModal(`<h2>Ganti Password</h2><form class="form" data-form="changePw">
+        <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
+        <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
+        <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Simpan</button></div></form>`);
+    },
+    forgotPw() {
+      openModal(`<h2>Lupa Password</h2>
+        <p class="muted small">Masukkan username dan email yang sudah terdaftar pada akun SIAKAD OBE. Permintaan akan diperiksa admin sekolah.</p>
+        <form class="form" data-form="forgotPw">
+          <div class="field"><label>Username</label><input name="username" autocomplete="username" required maxlength="80"></div>
+          <div class="field"><label>Email terdaftar</label><input name="email" type="email" autocomplete="email" required maxlength="120"></div>
+          <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Kirim Permintaan</button></div>
+        </form>`);
+    },
+    async approveReset(el) {
+      if (!confirm('Setujui permintaan ini dan buat password sementara?')) return;
+      const r = await api('/password-reset/admin/' + Number(el.dataset.id) + '/approve', 'POST', {});
+      openModal(`<h2>Password Sementara</h2>
+        <p>Permintaan disetujui. Berikan password ini kepada pengguna secara pribadi.</p>
+        <div class="card" style="font-size:1.2rem;font-weight:700;letter-spacing:1px;word-break:break-all">${esc(r.temporaryPassword || r.temporary_password)}</div>
+        <p class="muted small">Password ini hanya ditampilkan sekarang. Pengguna wajib menggantinya setelah login.</p>
+        <div class="actions"><button class="btn ghost" data-action="copyResetPw" data-password="${esc(r.temporaryPassword || r.temporary_password)}">Salin Password</button><button class="btn" data-action="closeModal">Selesai</button></div>`);
+    },
+    async rejectReset(el) {
+      if (!confirm('Tolak permintaan reset password ini?')) return;
+      await api('/password-reset/admin/' + Number(el.dataset.id) + '/reject', 'POST', {});
+      toast('Permintaan ditolak');
+      route();
+    },
+    refreshReset() { route(); },
+    copyResetPw(el) {
+      navigator.clipboard.writeText(el.dataset.password)
+        .then(() => toast('Password disalin'))
+        .catch(() => toast('Gagal menyalin password', false));
+    },
+    async del(el) {
+      if (!confirm('Hapus data ini?')) return;
+      await api(el.dataset.url, 'DELETE');
+      toast('Data dihapus');
+      route();
+    },
+    async resetPw(el) {
+      const pw = prompt('Password baru (min. 8 karakter):');
+      if (!pw) return;
+      await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw });
+      toast('Password direset');
+    },
+    async toggleActive(el) {
+      await api('/admin/users/' + el.dataset.id, 'PUT', {
+        active: el.dataset.active === '1'
+      });
+      route();
+    },
+    async activatePeriod(el) {
+      await api('/admin/periods/' + el.dataset.id + '/activate', 'PUT', {});
+      toast('Periode diaktifkan');
+      route();
+    }
+  };
+
+  const CHANGES = {
+    raporSemester(el) {
+      const o = document.getElementById('raporView');
+      if (o) showRapor(o.dataset.url, el.value).catch((e) => toast(e.message, false));
+    },
+    pickRaporKelas(el) {
+      location.hash = '#/rapor/' + el.value;
+    },
+    pickAssess(el) {
+      location.hash = `#/class/${el.dataset.tid}/input/${el.value}`;
+    },
+    setHomeroom(el) {
+      api('/admin/classes/' + el.dataset.id + '/homeroom', 'PUT', {
+        teacher_id: el.value ? Number(el.value) : null
+      })
+        .then(() => toast('Wali kelas tersimpan'))
+        .catch((e) => {
+          toast(e.message, false);
+          route();
+        });
+    },
+    pickNaikKelas(el) {
+      location.hash = '#/naik/' + el.value;
+    },
+    restoreAlumni(el) {
+      if (!el.value) return;
+      api('/admin/students/' + el.dataset.id + '/restore', 'PUT', {
+        class_id: Number(el.value)
+      })
+        .then(() => {
+          toast('Alumni dikembalikan ke kelas');
+          route();
+        })
+        .catch((e) => {
+          toast(e.message, false);
+          route();
+        });
+    }
+  };
+
+  document.addEventListener('submit', async (e) => {
+    const f = e.target.closest('form[data-form]');
+    if (!f) return;
+    e.preventDefault();
+    try {
+      await FORMS[f.dataset.form](Object.fromEntries(new FormData(f)), f);
+    } catch (err) {
+      toast(err.message, false);
+    }
+  });
+
+  document.addEventListener('click', async (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    try {
+      await ACTIONS[el.dataset.action](el, e);
+    } catch (err) {
+      toast(err.message, false);
+    }
+  });
+
+  document.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-change]');
+    if (el) CHANGES[el.dataset.change](el);
+  });
+
+  window.addEventListener('hashchange', route);
+
+  (async function init() {
+    try {
+      const r = await api('/me');
+      me = r.user;
+      route();
+    } catch (e) {
+      if (!me) renderLogin();
+    }
+  })();

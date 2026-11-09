@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
 const { analyze, KKM } = require('../analysis');
+const { buildReport } = require('../rapor');
 
 router.use(auth, role('siswa'));
 
@@ -45,6 +46,23 @@ router.get('/report', async (req, res) => {
   } catch(e){
     console.error(e);
     res.status(500).json({ error: 'Gagal load laporan: ' + e.message });
+  }
+});
+
+// E-Rapor milik siswa yang sedang login
+router.get('/rapor', async (req, res) => {
+  try {
+    const semester = req.query.semester ? String(req.query.semester).slice(0, 40) : null;
+    const d = await buildReport(req.user.id, semester);
+
+    if (!d) {
+      return res.status(404).json({ error: 'Data siswa tidak ditemukan' });
+    }
+
+    res.json(d);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Gagal memuat rapor: ' + e.message });
   }
 });
 
