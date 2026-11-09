@@ -2241,6 +2241,22 @@ async function keuanganView() {
   // ================= ACTION HANDLERS =================
 
   const ACTIONS = {
+
+async logout() {
+  if (!confirm('Yakin ingin keluar dari akun?')) return;
+
+  try {
+    await api('/logout', 'POST', {});
+
+    me = null;
+    location.hash = '';
+    renderLogin();
+
+  } catch (e) {
+    toast('Gagal logout: ' + e.message, false);
+  }
+},
+
     async bayarSPP(el) {
       const id = Number(el.dataset.id);
       const amount = prompt('Masukkan nominal pembayaran:');
