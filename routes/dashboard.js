@@ -11,6 +11,7 @@ const { KKM } = require('../analysis');
    - POST   /jadwal           : tambah jadwal (admin)
    - DELETE /jadwal/:id       : hapus jadwal (admin)
    - GET    /grafik           : data grafik sesuai peran (semua role)
+   - GET    /search?q=        : pencarian global sesuai peran (semua role)
    ===================================================== */
 
 const TZ = 'Asia/Jakarta';
@@ -253,6 +254,120 @@ router.get('/grafik', async (req, res) => {
 
     res.json(out);
   } catch (e) { fail(res, e, 'Gagal memuat grafik'); }
+});
+
+/* ---------- Pencarian global ---------- */
+const ROLE_LABEL = { admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah' };
+
+router.get('/search', async (req, res) => {
+  try {
+    const q = clip(req.query.q, 40);
+    if (q.length < 2) return res.json({ groups: [] });
+
+    const like = '%' + q.replace(/[!%_]/g, '!$&') + '%';
+    const r = req.user.role;
+    const groups = [];
+    const add = (title, items) => { if (items.length) groups.push({ title, items }); };
+    const L = "LIKE ? ESCAPE '!'";
+
+    if (r === 'admin' || r === 'kepsek') {
+      // Pengguna
+      const isAdmin = r === 'admin';
+      const users = await db.prepare(`
+        SELECT u.id, u.name, u.role, st.nis, c.name AS class_name
+        FROM users u
+        LEFT JOIN students st ON st.user_id = u.id
+        LEFT JOIN classes c ON c.id = st.class_id
+        WHERE (u.name ${L} OR st.nis ${L}${isAdmin ? ` OR u.username ${L}` : ''})
+          ${isAdmin ? '' : "AND u.role IN ('siswa','guru')"}
+        ORDER BY u.name LIMIT 6`).all(...(isAdmin ? [like, like, like] : [like, like]));
+      add('Pengguna', users.map((u) => ({
+        title: u.name,
+        meta: [ROLE_LABEL[u.role] || u.role, u.nis, u.class_name].filter(Boolean).join(' • '),
+        link: isAdmin ? '#/users' : (u.role === 'siswa' ? '#/rapor' : null)
+      })));
+
+      if (isAdmin) {
+        const cls = await db.prepare(`SELECT id, name, year FROM classes WHERE name ${L} ORDER BY name LIMIT 5`).all(like);
+        add('Kelas', cls.map((c) => ({ title: c.name, meta: c.year || '', link: '#/classes' })));
+
+        const subs = await db.prepare(
+          `SELECT id, code, name FROM subjects WHERE name ${L} OR code ${L} ORDER BY name LIMIT 5`
+        ).all(like, like);
+        add('Mata Pelajaran', subs.map((x) => ({ title: x.name, meta: x.code || '', link: '#/subjects' })));
+      }
+
+      const tch = await db.prepare(`
+        SELECT t.id, t.semester, s.name AS sn, c.name AS cn, u.name AS tn
+        FROM teaching t
+        JOIN subjects s ON s.id = t.subject_id
+        JOIN classes c ON c.id = t.class_id
+        JOIN users u ON u.id = t.teacher_id
+        WHERE s.name ${L} OR c.name ${L} OR u.name ${L}
+        ORDER BY t.semester DESC, c.name LIMIT 6`).all(like, like, like);
+      add('Kelas Ajar', tch.map((t) => ({
+        title: `${t.sn} - ${t.cn}`,
+        meta: `${t.tn} • ${t.semester || ''}`,
+        link: isAdmin ? '#/teaching' : '#/detail/' + t.id
+      })));
+    } else if (r === 'guru') {
+      const stu = await db.prepare(`
+        SELECT st.id, st.nis, u.name, c.name AS class_name, MIN(t.id) AS tid
+        FROM students st
+        JOIN users u ON u.id = st.user_id
+        JOIN classes c ON c.id = st.class_id
+        JOIN teaching t ON t.class_id = st.class_id AND t.teacher_id = ?
+        WHERE (u.name ${L} OR st.nis ${L})
+        GROUP BY st.id, st.nis, u.name, c.name
+        ORDER BY u.name LIMIT 6`).all(req.user.id, like, like);
+      add('Siswa Saya', stu.map((x) => ({
+        title: x.name,
+        meta: [x.nis, x.class_name].filter(Boolean).join(' • '),
+        link: '#/class/' + x.tid
+      })));
+
+      const tch = await db.prepare(`
+        SELECT t.id, t.semester, s.name AS sn, c.name AS cn
+        FROM teaching t
+        JOIN subjects s ON s.id = t.subject_id
+        JOIN classes c ON c.id = t.class_id
+        WHERE t.teacher_id = ? AND (s.name ${L} OR c.name ${L})
+        ORDER BY t.semester DESC, c.name LIMIT 6`).all(req.user.id, like, like);
+      add('Kelas Ajar Saya', tch.map((t) => ({
+        title: `${t.sn} - ${t.cn}`,
+        meta: t.semester || '',
+        link: '#/class/' + t.id
+      })));
+    } else if (r === 'siswa') {
+      const me = await db.prepare('SELECT class_id FROM students WHERE user_id = ?').get(req.user.id);
+      if (me && me.class_id) {
+        const tch = await db.prepare(`
+          SELECT t.id, t.semester, s.name AS sn, u.name AS tn
+          FROM teaching t
+          JOIN subjects s ON s.id = t.subject_id
+          JOIN users u ON u.id = t.teacher_id
+          WHERE t.class_id = ? AND (s.name ${L} OR u.name ${L})
+          ORDER BY s.name LIMIT 6`).all(me.class_id, like, like);
+        add('Mata Pelajaran Saya', tch.map((t) => ({
+          title: t.sn,
+          meta: `${t.tn} • ${t.semester || ''}`,
+          link: '#/report'
+        })));
+      }
+    }
+
+    // Pengumuman (semua peran)
+    const news = await db.prepare(
+      `SELECT id, title, created_at FROM announcements WHERE title ${L} OR body ${L} ORDER BY id DESC LIMIT 4`
+    ).all(like, like);
+    add('Pengumuman', news.map((n) => ({
+      title: n.title,
+      meta: String(n.created_at || '').slice(0, 10),
+      link: r === 'admin' ? '#/news' : '#/dash'
+    })));
+
+    res.json({ groups });
+  } catch (e) { fail(res, e, 'Gagal mencari'); }
 });
 
 module.exports = router;

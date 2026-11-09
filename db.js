@@ -191,7 +191,7 @@ const NEW_TABLES = [
     UNIQUE (name, semester)
   )`,
 
-  // SESI ABSENSI SISWA
+    // SESI ABSENSI SISWA
   `CREATE TABLE IF NOT EXISTS attendance_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     teaching_id INTEGER NOT NULL,
@@ -200,6 +200,64 @@ const NEW_TABLES = [
     opened_at TEXT DEFAULT CURRENT_TIMESTAMP,
     closes_at TEXT,
     status TEXT NOT NULL DEFAULT 'open'
+  )`,
+
+  // Data kegiatan ekstrakurikuler
+  `CREATE TABLE IF NOT EXISTS extracurriculars (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    coach_id INTEGER,
+    schedule TEXT,
+    quota INTEGER DEFAULT 0,
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  // Pendaftaran siswa ekstrakurikuler
+  `CREATE TABLE IF NOT EXISTS extracurricular_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    extracurricular_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'aktif',
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (extracurricular_id, student_id)
+  )`,
+
+  // Catatan bimbingan konseling
+  `CREATE TABLE IF NOT EXISTS counseling_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    counselor_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    notes TEXT NOT NULL,
+    follow_up TEXT,
+    session_date TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+    // Tagihan SPP siswa
+  `CREATE TABLE IF NOT EXISTS spp_invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    period TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    due_date TEXT,
+    status TEXT NOT NULL DEFAULT 'belum_lunas',
+    created_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  // Riwayat pembayaran SPP
+  `CREATE TABLE IF NOT EXISTS spp_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    payment_date TEXT NOT NULL,
+    method TEXT DEFAULT 'Tunai',
+    note TEXT,
+    recorded_by INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`
 ];
 
@@ -229,7 +287,12 @@ const NEW_INDEXES = [
    ON attendance_sessions (teaching_id, date, status)`,
 
   `CREATE INDEX IF NOT EXISTS idx_students_class
-   ON students (class_id)`
+   ON students (class_id)`,
+     `CREATE INDEX IF NOT EXISTS idx_spp_invoice_student
+   ON spp_invoices (student_id)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_spp_payment_invoice
+   ON spp_payments (invoice_id)`
 ];
 
 /* =====================================================
@@ -240,6 +303,7 @@ const MIGRATIONS = [
   `ALTER TABLE users ADD COLUMN must_change INTEGER DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN email TEXT`,
   `ALTER TABLE users ADD COLUMN phone TEXT`,
+  `ALTER TABLE users ADD COLUMN avatar_data TEXT`,
   `ALTER TABLE teaching ADD COLUMN year_id INTEGER`,
   `ALTER TABLE reflections ADD COLUMN created_at TEXT`,
 

@@ -81,6 +81,9 @@
       ['akademik', '🎓 Akademik'],
       ['administrasi', '🗂️ Administrasi'],
       ['pengaduan', '📬 Layanan Pengaduan'],
+     ['ekskul', '🏅 Ekstrakurikuler'],
+['bk', '🧑‍⚕️ Bimbingan Konseling'],
+['keuangan', '💰 Keuangan / SPP'],
       ['akun', '👤 Akun']
     ],
     guru: [
@@ -100,6 +103,8 @@
       ['absen', '🗓️ Absensi Saya'],
       ['akademik', '🎓 Akademik'],
       ['pengaduan', '📬 Layanan Pengaduan'],
+      ['ekskul', '🏅 Ekstrakurikuler'],
+      ['keuangan', '💰 Tagihan SPP'],
       ['akun', '👤 Akun']
     ],
     kepsek: [
@@ -110,6 +115,7 @@
       ['akademik', '🎓 Akademik'],
       ['administrasi', '🗂️ Administrasi'],
       ['pengaduan', '📬 Layanan Pengaduan'],
+      ['bk', '🧑‍⚕️ Bimbingan Konseling'],
       ['akun', '👤 Akun']
     ]
   };
@@ -180,6 +186,10 @@
         <div class="main">
           <header class="top">
             <button class="burger" data-action="toggleSide">☰</button>
+            <div id="gsWrap" style="position:relative;flex:1 1 220px;max-width:360px;min-width:0">
+              <input id="gsInput" type="search" placeholder="🔍 Cari siswa, kelas, mapel, pengumuman..." autocomplete="off" maxlength="40" aria-label="Pencarian global" style="width:100%;padding:.5rem .8rem;border-radius:10px;border:1px solid rgba(100,116,139,.4);background:rgba(100,116,139,.1);color:inherit;font:inherit;font-size:.85rem">
+              <div id="gsBox" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:60;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.2);max-height:70vh;overflow:auto;min-width:min(340px,86vw)"></div>
+            </div>
             <span class="who">${esc(me.name)}<em>${roleLabel(me.role)}</em></span>
             <button class="btn sm ghost" data-action="bell" title="Notifikasi" style="position:relative">🔔<span id="bellCount" style="display:none;position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-size:.68rem;font-weight:700;line-height:18px;text-align:center"></span></button>
             <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
@@ -595,22 +605,79 @@
 
   // ---------- AKUN ----------
   async function akunView() {
-    const d = await api('/portal/akun');
-    const u = d.user;
-    const row = (l, v) => `<tr><td class="muted" style="width:150px">${l}</td><td><b>${esc(v || '-')}</b></td></tr>`;
-    return `<h1>Akun</h1>
-      <div class="grid2">
-        <div class="card"><h2>Profil</h2><table><tbody>
-          ${row('Nama', u.name)}${row('Username', u.username)}${row('Peran', roleLabel(u.role))}
-          ${d.siswa ? row('NIS', d.siswa.nis) + row('Kelas', d.siswa.class_name) : ''}
-        </tbody></table></div>
-        <div class="card"><h2>Kontak</h2><form class="form" data-form="saveAkun">
-          <div class="field"><label>Email</label><input name="email" type="email" maxlength="120" value="${esc(u.email || '')}"></div>
-          <div class="field"><label>No. Telepon</label><input name="phone" maxlength="20" value="${esc(u.phone || '')}"></div>
-          <div><button class="btn" type="submit">Simpan</button></div></form></div>
+  const d = await api('/portal/akun');
+  const u = d.user;
+
+  const row = (l, v) =>
+    `<tr><td class="muted" style="width:150px">${l}</td><td><b>${esc(v || '-')}</b></td></tr>`;
+
+  const foto = u.avatar_data
+    ? `<img src="${esc(u.avatar_data)}" alt="Foto Profil"
+         style="width:130px;height:130px;object-fit:cover;border-radius:50%;border:4px solid #e2e8f0">`
+    : `<div style="width:130px;height:130px;border-radius:50%;background:#6366f1;color:white;display:grid;place-items:center;font-size:2.5rem;font-weight:bold">
+         ${esc((u.name || 'U').charAt(0).toUpperCase())}
+       </div>`;
+
+  return `<h1>Akun</h1>
+    <div class="card">
+      <h2>📸 Foto Profil</h2>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        ${foto}
+        <div>
+          <form class="form" data-form="saveFotoProfil">
+            <div class="field">
+              <label>Pilih Foto Profil</label>
+              <input type="file" name="foto"
+                accept="image/jpeg,image/png,image/webp" required>
+            </div>
+            <button class="btn" type="submit">Unggah Foto</button>
+          </form>
+          ${u.avatar_data
+            ? `<button class="btn danger" data-action="hapusFotoProfil"
+                 style="margin-top:10px">Hapus Foto</button>`
+            : ''}
+          <p class="muted small">Format JPG, PNG, WEBP. Maksimal 1 MB.</p>
+        </div>
       </div>
-      <div class="card"><h2>Keamanan</h2><p class="muted small" style="margin-bottom:.8rem">Ganti password secara berkala. Minimal 8 karakter.</p><button class="btn ghost" data-action="pw">🔑 Ganti Password</button></div>`;
-  }
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Profil</h2>
+        <table><tbody>
+          ${row('Nama', u.name)}
+          ${row('Username', u.username)}
+          ${row('Peran', roleLabel(u.role))}
+          ${d.siswa ? row('NIS', d.siswa.nis) + row('Kelas', d.siswa.class_name) : ''}
+        </tbody></table>
+      </div>
+
+      <div class="card">
+        <h2>Kontak</h2>
+        <form class="form" data-form="saveAkun">
+          <div class="field">
+            <label>Email</label>
+            <input name="email" type="email" maxlength="120"
+              value="${esc(u.email || '')}">
+          </div>
+          <div class="field">
+            <label>No. Telepon</label>
+            <input name="phone" maxlength="20"
+              value="${esc(u.phone || '')}">
+          </div>
+          <div><button class="btn" type="submit">Simpan</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Keamanan</h2>
+      <p class="muted small" style="margin-bottom:.8rem">
+        Ganti password secara berkala. Minimal 8 karakter.
+      </p>
+      <button class="btn ghost" data-action="pw">🔑 Ganti Password</button>
+    </div>`;
+}
 
   /* ===================== DASHBOARD (TAHAP 3) ===================== */
   const QUICK_EXTRA = {
@@ -998,6 +1065,51 @@
     return head + `<div class="card"><h2>📚 Materi</h2>${materials}</div><div class="card"><h2>📝 Tugas</h2>${tasks}</div>`;
   }
 
+  /* ===================== PENCARIAN GLOBAL (FITUR 9) ===================== */
+  let gsTimer = null;
+  let gsSeq = 0;
+  const gsNote = (t) => `<p style="padding:.8rem;margin:0;color:#64748b;font-size:.85rem">${t}</p>`;
+  const gsEl = () => document.getElementById('gsBox');
+  function gsHide() { const b = gsEl(); if (b) { b.style.display = 'none'; b.innerHTML = ''; } }
+  function gsShow(html) { const b = gsEl(); if (!b) return; b.innerHTML = html; b.style.display = 'block'; }
+
+  function gsRender(groups, q) {
+    if (!groups.length) return gsNote(`Tidak ada hasil untuk "${esc(q)}".`);
+    return groups.map((g) => `<div style="padding:.35rem .8rem;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b;background:#f1f5f9">${esc(g.title)}</div>`
+      + g.items.map((it) => {
+        const inner = `<b style="display:block;font-size:.85rem">${esc(it.title)}</b>${it.meta ? `<span style="font-size:.75rem;color:#64748b">${esc(it.meta)}</span>` : ''}`;
+        const box = 'display:block;padding:.5rem .8rem;color:#0f172a;border-bottom:1px solid #e2e8f0;text-decoration:none';
+        return it.link && String(it.link).startsWith('#/')
+          ? `<a href="${esc(it.link)}" data-action="gsClose" style="${box}">${inner}</a>`
+          : `<div style="${box}">${inner}</div>`;
+      }).join('')).join('');
+  }
+
+  document.addEventListener('input', (e) => {
+    if (!e.target || e.target.id !== 'gsInput') return;
+    const q = e.target.value.trim();
+    clearTimeout(gsTimer);
+    if (q.length < 2) { gsSeq++; gsHide(); return; }
+    gsTimer = setTimeout(async () => {
+      const my = ++gsSeq;
+      gsShow(gsNote('Mencari...'));
+      try {
+        const d = await api('/dashboard/search?q=' + encodeURIComponent(q));
+        if (my !== gsSeq) return;
+        gsShow(gsRender(d.groups || [], q));
+      } catch (err) {
+        if (my === gsSeq && me) gsShow(gsNote(esc(err.message)));
+      }
+    }, 300);
+  });
+  document.addEventListener('focusin', (e) => {
+    if (e.target && e.target.id === 'gsInput' && e.target.value.trim().length >= 2 && gsEl() && gsEl().innerHTML) gsEl().style.display = 'block';
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#gsWrap')) gsHide(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { gsHide(); const i = document.getElementById('gsInput'); if (i) i.blur(); }
+  });
+
   /* ===================== NOTIFIKASI (LONCENG) ===================== */
   let notifCache = { items: [], unread: 0 };
 
@@ -1235,117 +1347,853 @@ async function resetView() {
     </div>
   `;
 }
-  const VIEWS = {
-admin: {
-  dash, users: usersView, classes: classesView,
-  naik: naikView, periode: periodeView,
-  rapor: raporAdminView, export: exportView,
-  log: logView, backup: backupView,
-  subjects: subjectsView, teaching: teachingAdminView,
-  news: newsView, jadwal: jadwalAdminView,
-  absen: absenPantau, akademik: akademikView,
-  administrasi: administrasiView, pengaduan: pengaduanView,
-  akun: akunView, monitor: monitorView,
-  reset: resetView,
-  detail: detailView,
-},
-    guru: { dash, mycls: myClasses, wali: waliView, lms: lmsView, class: classDetail, absen: absenGuru, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
-    siswa: { dash, report: reportView, lms: lmsView, absen: absenSiswa, akademik: akademikView, pengaduan: pengaduanView, akun: akunView },
-    kepsek: { dash, rapor: raporAdminView, monitor: monitorView, detail: detailView, absen: absenPantau, akademik: akademikView, administrasi: administrasiView, pengaduan: pengaduanView, akun: akunView }
-  };
+// ===============================
+// FITUR 11: EKSTRAKURIKULER
+// ===============================
 
-  async function route() {
-    closeModal();
-    if (!me) return renderLogin();
-    if (me.must_change) return renderForceChange();
-    const [, view = 'dash', id, tab, extra] = location.hash.split('/');
-    const fn = VIEWS[me.role][view];
-    if (!fn) { location.hash = '#/dash'; return; }
-    const active = view === 'class' ? 'mycls' : view === 'detail' ? 'monitor' : view;
+async function ekskulView() {
+  const data = await api('/portal/ekskul')
+  const isAdmin = me.role === 'admin';
+
+  let html = `
+    <div class="page-head">
+      <div>
+        <h1>Ekstrakurikuler</h1>
+        <p class="muted">Informasi dan kegiatan ekstrakurikuler sekolah.</p>
+      </div>
+    </div>
+  `;
+
+  if (isAdmin) {
+    html += `
+      <div class="card">
+        <h3>Tambah Ekstrakurikuler</h3>
+        <form class="form" data-form="saveEkskul">
+          <div class="field">
+            <label>Nama Ekstrakurikuler</label>
+            <input name="name" placeholder="Contoh: Pramuka" required>
+          </div>
+          <div class="field">
+            <label>Deskripsi</label>
+            <textarea name="description" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label>Jadwal</label>
+            <input name="schedule" placeholder="Contoh: Jumat, 14.00 WIB">
+          </div>
+          <div class="field">
+            <label>Kuota Anggota</label>
+            <input name="quota" type="number" min="0" value="0">
+          </div>
+          <button class="btn" type="submit">+ Simpan Ekstrakurikuler</button>
+          <p class="form-msg"></p>
+        </form>
+      </div>
+    `;
+  }
+
+  html += `
+    <div class="grid">
+      ${data.length ? data.map(x => `
+        <div class="card">
+          <h3>${esc(x.name)}</h3>
+          <p>${esc(x.description || 'Tidak ada deskripsi.')}</p>
+          <p class="muted small">📅 ${esc(x.schedule || 'Jadwal belum ditentukan')}</p>
+          <p class="muted small">Kuota: ${Number(x.quota || 0) || 'Tidak dibatasi'}</p>
+          ${
+            me.role === 'siswa'
+              ? `<button class="btn sm" data-action="joinEkskul" data-id="${Number(x.id)}">Daftar</button>`
+              : ''
+          }
+        </div>
+      `).join('') : '<div class="card"><p>Belum ada ekstrakurikuler.</p></div>'}
+    </div>
+  `;
+
+  return html;
+}
+
+
+// ===============================
+// FITUR 11: BIMBINGAN KONSELING
+// ===============================
+// ================= Bimbingan Konseling =================
+
+async function bkView() {
+  const data = await api('/portal/bk');
+
+  const rows = data.map(x => `
+    <tr>
+      <td>${esc(x.student_name || x.student_id)}</td>
+      <td>${esc(x.category)}</td>
+      <td>${esc(x.notes)}</td>
+      <td>${esc(x.follow_up || '-')}</td>
+      <td>${esc(x.session_date)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="page-head">
+      <div>
+        <h1>Bimbingan Konseling</h1>
+        <p class="muted">Pencatatan layanan bimbingan dan konseling siswa.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Tambah Catatan Konseling</h3>
+      <form class="form" data-form="saveBK">
+        <div class="field">
+          <label>ID Siswa</label>
+          <input name="student_id" type="number" min="1" required>
+        </div>
+
+        <div class="field">
+          <label>Kategori</label>
+          <select name="category" required>
+            <option value="">Pilih kategori</option>
+            <option value="Akademik">Akademik</option>
+            <option value="Pribadi">Pribadi</option>
+            <option value="Sosial">Sosial</option>
+            <option value="Karier">Karier</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Catatan Konseling</label>
+          <textarea name="notes" rows="4" required></textarea>
+        </div>
+
+        <div class="field">
+          <label>Tindak Lanjut</label>
+          <textarea name="follow_up" rows="3"></textarea>
+        </div>
+
+        <div class="field">
+          <label>Tanggal Konseling</label>
+          <input name="session_date" type="date" required>
+        </div>
+
+        <button class="btn" type="submit">Simpan Catatan</button>
+        <p class="form-msg"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Riwayat Konseling</h3>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama / ID Siswa</th>
+              <th>Kategori</th>
+              <th>Catatan</th>
+              <th>Tindak Lanjut</th>
+              <th>Tanggal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || '<tr><td colspan="5">Belum ada catatan konseling.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+
+// ================= KEUANGAN / SPP =================
+
+
+async function keuanganView() {
+  try {
+    const [data, siswaData, riwayat] = await Promise.all([
+      api('/portal/keuangan'),
+      api('/portal/keuangan/siswa'),
+      api('/portal/keuangan/riwayat')
+    ]);
+
+    const siswa = Array.isArray(siswaData)
+      ? siswaData
+      : (siswaData.rows || siswaData.siswa || siswaData.students || []);
+
+    const rupiah = n =>
+      'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+    const tanggal = value => {
+      if (!value) return '-';
+      const d = new Date(value + 'T00:00:00');
+      return isNaN(d.getTime())
+        ? value
+        : d.toLocaleDateString('id-ID');
+    };
+
+    return `
+      <div class="card">
+        <h3>📊 Laporan Keuangan SPP</h3>
+        <p>Filter dan cetak laporan pembayaran siswa.</p>
+
+        <form id="filterLaporanSPP">
+          <div class="form-group">
+            <label>Dari Tanggal</label>
+            <input type="date" id="laporanMulai">
+          </div>
+
+          <div class="form-group">
+            <label>Sampai Tanggal</label>
+            <input type="date" id="laporanSampai">
+          </div>
+
+          <div class="form-group">
+            <label>Pilih Siswa</label>
+            <select id="laporanSiswa">
+              <option value="">Semua Siswa</option>
+              ${siswa.map(s => `
+                <option value="${Number(s.id)}">
+                  ${esc(s.student_name)} - ${esc(s.nis || '')}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            data-action="tampilkanLaporanSPP">
+            Tampilkan Laporan
+          </button>
+        </form>
+
+        <div id="hasilLaporanSPP">
+          <p>Silakan pilih filter untuk menampilkan laporan.</p>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <h2>💰 Keuangan / SPP</h2>
+        <p>Kelola tagihan dan pembayaran SPP siswa.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>Total Tagihan</h3>
+          <h2>${rupiah(data.total?.total_nominal)}</h2>
+        </div>
+
+        <div class="stat-card">
+          <h3>Total Pembayaran</h3>
+          <h2>${rupiah(riwayat.total?.total_pembayaran)}</h2>
+        </div>
+
+        <div class="stat-card">
+          <h3>Transaksi</h3>
+          <h2>${riwayat.total?.total_transaksi || 0}</h2>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Buat Tagihan SPP</h3>
+
+        <form data-form="saveTagihanSPP">
+          <div class="form-msg"></div>
+
+          <div class="form-group">
+            <label>Pilih Siswa</label>
+            <select name="student_id" required>
+              <option value="">-- Pilih Siswa --</option>
+              ${siswa.map(s => `
+                <option value="${Number(s.id)}">
+                  ${esc(s.student_name)} - ${esc(s.nis || '')}
+                  (${esc(s.class_name || '-')})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Nama Tagihan</label>
+            <input name="title" required>
+          </div>
+
+          <div class="form-group">
+            <label>Periode</label>
+            <input
+              name="period"
+              placeholder="Contoh: November 2026"
+              required>
+          </div>
+
+          <div class="form-group">
+            <label>Nominal</label>
+            <input name="amount" type="number" min="1" required>
+          </div>
+
+          <div class="form-group">
+            <label>Jatuh Tempo</label>
+            <input name="due_date" type="date">
+          </div>
+
+          <button type="submit">Simpan Tagihan</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Daftar Tagihan Siswa</h3>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Siswa</th>
+                <th>Tagihan</th>
+                <th>Nominal</th>
+                <th>Dibayar</th>
+                <th>Sisa</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(data.rows || []).map(p => {
+                const sisa = Number(p.amount || 0) -
+                  Number(p.amount_paid || 0);
+
+                return `
+                  <tr>
+                    <td>${esc(p.student_name || '-')}</td>
+                    <td>${esc(p.title)} - ${esc(p.period)}</td>
+                    <td>${rupiah(p.amount)}</td>
+                    <td>${rupiah(p.amount_paid)}</td>
+                    <td>${rupiah(sisa)}</td>
+                    <td>${esc(p.status || '-')}</td>
+                    <td>
+                      ${sisa > 0 ? `
+                        <button
+                          type="button"
+                          data-action="bayarSPP"
+                          data-id="${Number(p.id)}">
+                          Catat Bayar
+                        </button>
+                      ` : 'Selesai'}
+                    </td>
+                  </tr>
+                `;
+              }).join('') || `
+                <tr>
+                  <td colspan="7">Belum ada tagihan.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📋 Riwayat Pembayaran SPP</h3>
+        <p>Daftar seluruh transaksi pembayaran siswa.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Siswa</th>
+                <th>Kelas</th>
+                <th>Tagihan</th>
+                <th>Nominal Bayar</th>
+                <th>Tanggal</th>
+                <th>Metode</th>
+                <th>Catatan</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(riwayat.rows || []).map((p, i) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td>${esc(p.student_name || '-')}</td>
+                  <td>${esc(p.class_name || '-')}</td>
+                  <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
+                  <td>${rupiah(p.amount)}</td>
+                  <td>${tanggal(p.payment_date)}</td>
+                  <td>${esc(p.method || 'Tunai')}</td>
+                  <td>${esc(p.note || '-')}</td>
+                  <td>
+                    <button
+                      type="button"
+                      data-action="cetakBuktiSPP"
+                      data-id="${Number(p.id)}">
+                      🖨️ Cetak
+                    </button>
+                  </td>
+                </tr>
+              `).join('') || `
+                <tr>
+                  <td colspan="9">Belum ada riwayat pembayaran.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    return `
+      <div class="card">
+        Gagal memuat keuangan: ${esc(e.message)}
+      </div>
+    `;
+  }
+}
+
+  // ================= KEUANGAN SISWA =================
+
+  async function keuanganSiswaView() {
     try {
-      const html = await fn(id, tab, extra);
-      app.innerHTML = layout(html, active);
-      logVisit(view, location.hash);
-      paintBell();
-      refreshBell();
+      const data = await api('/portal/keuangan/saya');
+
+      const rupiah = n =>
+        'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+      return `
+        <div class="page-head">
+          <h2>💰 Tagihan SPP Saya</h2>
+          <p>Lihat tagihan dan riwayat pembayaran SPP kamu.</p>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tagihan</th>
+                  <th>Periode</th>
+                  <th>Nominal</th>
+                  <th>Dibayar</th>
+                  <th>Sisa</th>
+                  <th>Jatuh Tempo</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${(data.rows || []).map(i => {
+                  const total = Number(i.amount || 0);
+                  const paid = Number(i.amount_paid || 0);
+                  const remaining = Math.max(0, total - paid);
+
+                  return `
+                    <tr>
+                      <td>${esc(i.title || '-')}</td>
+                      <td>${esc(i.period || '-')}</td>
+                      <td>${rupiah(total)}</td>
+                      <td>${rupiah(paid)}</td>
+                      <td>${rupiah(remaining)}</td>
+                      <td>${esc(i.due_date || '-')}</td>
+                      <td>${remaining <= 0 ? 'Lunas' : 'Belum Lunas'}</td>
+                    </tr>
+                  `;
+                }).join('') || `
+                  <tr>
+                    <td colspan="7">Belum ada tagihan SPP.</td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
     } catch (e) {
-      if (!me) return;
-      app.innerHTML = layout(`<div class="card"><p class="err">${esc(e.message)}</p></div>`, active);
+      return `
+        <div class="card">
+          Gagal memuat tagihan: ${esc(e.message)}
+        </div>
+      `;
     }
   }
 
+  // ================= DAFTAR TAMPILAN =================
+
+  const VIEWS = {
+    admin: {
+      dash, users: usersView, classes: classesView,
+      naik: naikView, periode: periodeView,
+      rapor: raporAdminView, export: exportView,
+      log: logView, backup: backupView,
+      subjects: subjectsView, teaching: teachingAdminView,
+      news: newsView, jadwal: jadwalAdminView,
+      absen: absenPantau, akademik: akademikView,
+      administrasi: administrasiView, pengaduan: pengaduanView,
+      akun: akunView, monitor: monitorView,
+      reset: resetView, detail: detailView,
+      ekskul: ekskulView, bk: bkView,
+      keuangan: keuanganView
+    },
+
+    guru: {
+      dash, mycls: myClasses, wali: waliView,
+      lms: lmsView, class: classDetail,
+      absen: absenGuru, akademik: akademikView,
+      pengaduan: pengaduanView, akun: akunView
+    },
+
+    siswa: {
+      dash, report: reportView, lms: lmsView,
+      absen: absenSiswa, akademik: akademikView,
+      pengaduan: pengaduanView, akun: akunView,
+      keuangan: keuanganSiswaView
+    },
+
+    kepsek: {
+      dash, rapor: raporAdminView,
+      monitor: monitorView, detail: detailView,
+      absen: absenPantau, akademik: akademikView,
+      administrasi: administrasiView,
+      pengaduan: pengaduanView, akun: akunView
+    }
+  };
+
+  // ================= ROUTING =================
+
+  async function route() {
+    closeModal();
+
+    if (!me) return renderLogin();
+    if (me.must_change) return renderForceChange();
+
+    const [, view = 'dash', id, tab, extra] =
+      location.hash.split('/');
+
+    const fn = VIEWS[me.role]?.[view];
+
+    if (!fn) {
+      location.hash = '#/dash';
+      return;
+    }
+
+    const active =
+      view === 'class' ? 'mycls' :
+      view === 'detail' ? 'monitor' :
+      view;
+
+    try {
+      const html = await fn(id, tab, extra);
+
+      app.innerHTML = layout(html, active);
+
+      logVisit(view, location.hash);
+      paintBell();
+      refreshBell();
+
+    } catch (e) {
+      if (!me) return;
+
+      app.innerHTML = layout(
+        `<div class="card"><p class="err">${esc(e.message)}</p></div>`,
+        active
+      );
+    }
+  }
+
+  // ================= FORM HANDLERS =================
+
   const FORMS = {
     async login(data, f) {
-      const msg = f.querySelector('.form-msg'); msg.textContent = '';
-      try { const r = await api('/login', 'POST', data); me = r.user; location.hash = '#/dash'; route(); }
-      catch (e) { msg.textContent = e.message; }
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
+
+      try {
+        const r = await api('/login', 'POST', data);
+        me = r.user;
+        location.hash = '#/dash';
+        route();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
     },
+
     async forgotPw(data, f) {
-  const msg = f.querySelector('.form-msg');
-  msg.textContent = '';
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
 
-  try {
-    await api('/password-reset/request', 'POST', {
-      username: data.username,
-      email: data.email
-    });
+      try {
+        await api('/password-reset/request', 'POST', {
+          username: data.username,
+          email: data.email
+        });
 
-    msg.textContent = 'Permintaan reset berhasil dikirim. Hubungi admin sekolah.';
-    f.reset();
-  } catch (e) {
-    msg.textContent = e.message;
-  }
-},
+        if (msg) {
+          msg.textContent =
+            'Permintaan reset berhasil dikirim. Hubungi admin sekolah.';
+        }
+
+        f.reset();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
+    },
+
     async changePw(data, f) {
-      const msg = f.querySelector('.form-msg'); msg.textContent = '';
-      try { await api('/change-password', 'POST', data); me.must_change = false; closeModal(); toast('Password berhasil diganti'); route(); }
-      catch (e) { msg.textContent = e.message; }
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
+
+      try {
+        await api('/change-password', 'POST', data);
+        me.must_change = false;
+        closeModal();
+        toast('Password berhasil diganti');
+        route();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
     },
-    absenPick(data, f) { location.hash = `#/absen/${f.dataset.sub}/${data.teaching_id}/${data.period}`; },
+
+    absenPick(data, f) {
+      location.hash =
+        `#/absen/${f.dataset.sub}/${data.teaching_id}/${data.period}`;
+    },
+
     async bukaSesi(data, f) {
-      await api('/absensi/guru/sesi/buka', 'POST', { teaching_id: Number(f.dataset.tid), durasi_menit: Number(data.durasi_menit) });
-      toast('Sesi absensi berhasil dibuka'); route();
+      await api('/absensi/guru/sesi/buka', 'POST', {
+        teaching_id: Number(f.dataset.tid),
+        durasi_menit: Number(data.durasi_menit)
+      });
+
+      toast('Sesi absensi berhasil dibuka');
+      route();
     },
-    absenPantauPick(data) { location.hash = `#/absen/hari/${data.date}`; },
+
+    absenPantauPick(data) {
+      location.hash = `#/absen/hari/${data.date}`;
+    },
+
     async saveAbsen(data, f) {
-      const records = [...f.querySelectorAll('tr[data-sid]')].map((tr) => ({
+      const records = [...f.querySelectorAll('tr[data-sid]')].map(tr => ({
         student_id: Number(tr.dataset.sid),
         status: tr.querySelector('.abs-status').value,
         note: tr.querySelector('.abs-note').value.trim()
       }));
-      await api('/absensi/guru/siswa', 'PUT', { teaching_id: Number(f.dataset.tid), date: f.dataset.date, records });
+
+      await api('/absensi/guru/siswa', 'PUT', {
+        teaching_id: Number(f.dataset.tid),
+        date: f.dataset.date,
+        records
+      });
+
       toast('Absensi tersimpan');
     },
-    async staffLeave(data) { await api('/absensi/staf/izin', 'POST', data); toast('Keterangan tersimpan'); route(); },
-    async saveAkun(data) { await api('/portal/akun', 'PUT', data); toast('Kontak tersimpan'); route(); },
+
+    async saveEkskul(data, f) {
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
+
+      try {
+        await api('/ekskul', 'POST', {
+          name: data.name,
+          description: data.description,
+          schedule: data.schedule,
+          quota: Number(data.quota || 0)
+        });
+
+        toast('Ekstrakurikuler berhasil ditambahkan');
+        route();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
+    },
+
+    // ================= KEUANGAN / SPP =================
+
+    async saveTagihanSPP(data, f) {
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
+
+      try {
+        if (!data.student_id) {
+          throw new Error('Silakan pilih siswa terlebih dahulu.');
+        }
+
+        if (
+          !data.title ||
+          !data.period ||
+          !Number.isSafeInteger(Number(data.amount)) ||
+          Number(data.amount) <= 0
+        ) {
+          throw new Error('Lengkapi nama tagihan, periode, dan nominal dengan benar.');
+        }
+
+        await api('/portal/keuangan/tagihan', 'POST', {
+          student_id: Number(data.student_id),
+          title: data.title.trim(),
+          period: data.period.trim(),
+          amount: Number(data.amount),
+          due_date: data.due_date || ''
+        });
+
+        toast('Tagihan SPP berhasil dibuat!');
+        route();
+
+      } catch (e) {
+        console.error('Gagal menyimpan tagihan:', e);
+
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
+    },
+
+    async saveBK(data, f) {
+      const msg = f.querySelector('.form-msg');
+      if (msg) msg.textContent = '';
+
+      try {
+        await api('/bk', 'POST', {
+          student_id: Number(data.student_id),
+          category: data.category,
+          notes: data.notes,
+          follow_up: data.follow_up,
+          session_date: data.session_date
+        });
+
+        toast('Catatan konseling berhasil disimpan');
+        route();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        else toast(e.message, false);
+      }
+    },
+
+    async staffLeave(data) {
+      await api('/absensi/staf/izin', 'POST', data);
+      toast('Keterangan tersimpan');
+      route();
+    },
+
+    async saveAkun(data) {
+      await api('/portal/akun', 'PUT', data);
+      toast('Kontak tersimpan');
+      route();
+    },
+
+    async saveFotoProfil(data, f) {
+      const file = f.querySelector('input[name="foto"]').files[0];
+
+      if (!file) {
+        throw new Error('Pilih foto terlebih dahulu.');
+      }
+
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+
+      if (!allowed.includes(file.type)) {
+        throw new Error('Format foto harus JPG, PNG, atau WEBP.');
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('Ukuran foto maksimal 5 MB.');
+      }
+
+      const image = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Gagal membaca foto.'));
+        reader.readAsDataURL(file);
+      });
+
+      await api('/portal/akun/foto', 'PUT', { image });
+
+      toast('Foto profil berhasil diperbarui');
+      route();
+    },
+
     async respondPengaduan(data, f) {
       await api('/portal/pengaduan/' + f.dataset.id, 'PUT', data);
-      closeModal(); toast('Tanggapan tersimpan'); route();
+      closeModal();
+      toast('Tanggapan tersimpan');
+      route();
     },
+
     async importUsers(data, f) {
       const file = f.querySelector('input[type=file]').files[0];
-      if (!file) throw new Error('Pilih file Excel dulu.');
-      if (file.size > 400 * 1024) throw new Error('File terlalu besar (maksimal 400 KB).');
+
+      if (!file) {
+        throw new Error('Pilih file Excel dulu.');
+      }
+
+      if (file.size > 400 * 1024) {
+        throw new Error('File terlalu besar (maksimal 400 KB).');
+      }
+
       const b64 = await new Promise((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(String(r.result).split(',')[1] || '');
         r.onerror = () => reject(new Error('Gagal membaca file.'));
         r.readAsDataURL(file);
       });
-      const r = await api('/admin/users/import', 'POST', { file: b64 });
+
+      const r = await api('/admin/users/import', 'POST', {
+        file: b64
+      });
+
       const list = r.errors.length
-        ? `<div style="max-height:260px;overflow:auto;margin:.8rem 0"><table><thead><tr><th>Baris</th><th>Username</th><th>Keterangan</th></tr></thead><tbody>${r.errors.map((x) => `<tr><td>${x.row}</td><td>${esc(x.username || '-')}</td><td>${esc(x.message)}</td></tr>`).join('')}</tbody></table></div>`
+        ? `<div style="max-height:260px;overflow:auto;margin:.8rem 0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Baris</th>
+                  <th>Username</th>
+                  <th>Keterangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.errors.map(x => `
+                  <tr>
+                    <td>${x.row}</td>
+                    <td>${esc(x.username || '-')}</td>
+                    <td>${esc(x.message)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>`
         : '';
-      openModal(`<h2>Hasil Impor</h2>
-        <p>✅ Berhasil: <b>${r.created}</b> &bull; ⏭️ Dilewati: <b>${r.skipped}</b> &bull; ❌ Gagal: <b>${r.failed}</b></p>${list}
-        <div class="actions"><button class="btn" data-action="closeImport">Selesai</button></div>`);
+
+      openModal(`
+        <h2>Hasil Impor</h2>
+        <p>
+          Berhasil: <b>${r.created}</b> |
+          Dilewati: <b>${r.skipped}</b> |
+          Gagal: <b>${r.failed}</b>
+        </p>
+        ${list}
+        <div class="actions">
+          <button class="btn" data-action="closeImport">Selesai</button>
+        </div>
+      `);
     },
+
     async promote(data, f) {
-      const ids = [...f.querySelectorAll('input.pick-siswa:checked')].map((i) => Number(i.value));
-      if (!ids.length) throw new Error('Pilih minimal satu siswa.');
-      if (!data.target) throw new Error('Pilih kelas tujuan.');
+      const ids = [
+        ...f.querySelectorAll('input.pick-siswa:checked')
+      ].map(i => Number(i.value));
+
+      if (!ids.length) {
+        throw new Error('Pilih minimal satu siswa.');
+      }
+
+      if (!data.target) {
+        throw new Error('Pilih kelas tujuan.');
+      }
+
       const lulus = data.target === 'LULUS';
-      if (!confirm(`Yakin ${lulus ? 'meluluskan' : 'memindahkan'} ${ids.length} siswa? Pastikan E-Rapor semester ini sudah dicetak.`)) return;
+
+      if (!confirm(
+        `Yakin ${lulus ? 'meluluskan' : 'memindahkan'} ${ids.length} siswa? Pastikan E-Rapor semester ini sudah dicetak.`
+      )) return;
+
       await api('/admin/promotion', 'POST', {
         from_class_id: Number(f.dataset.from),
         to_class_id: lulus ? null : Number(data.target),
@@ -1353,273 +2201,421 @@ admin: {
         student_ids: ids,
         deactivate: data.deactivate === 'on'
       });
-      toast(lulus ? 'Siswa berhasil diluluskan' : 'Siswa berhasil dipindahkan');
+
+      toast(
+        lulus
+          ? 'Siswa berhasil diluluskan'
+          : 'Siswa berhasil dipindahkan'
+      );
+
       const same = location.hash === '#/naik';
       location.hash = '#/naik';
+
       if (same) route();
     },
-    async post(data, f) { await api(f.dataset.url, 'POST', data); toast('Data tersimpan'); route(); },
+
+    async post(data, f) {
+      await api(f.dataset.url, 'POST', data);
+      toast('Data tersimpan');
+      route();
+    },
+
     async saveScores(data, f) {
-      const scores = [...f.querySelectorAll('input.score')].map((i) => ({ student_id: Number(i.dataset.sid), score: i.value === '' ? null : Number(i.value) }));
-      await api(`/guru/assessments/${f.dataset.aid}/scores`, 'PUT', { scores });
+      const scores = [
+        ...f.querySelectorAll('input.score')
+      ].map(i => ({
+        student_id: Number(i.dataset.sid),
+        score: i.value === '' ? null : Number(i.value)
+      }));
+
+      await api(
+        `/guru/assessments/${f.dataset.aid}/scores`,
+        'PUT',
+        { scores }
+      );
+
       toast('Nilai tersimpan');
     }
   };
 
+  // ================= ACTION HANDLERS =================
+
   const ACTIONS = {
-    bukaRapor(el) { return showRapor(el.dataset.url); },
-    cetakRapor() { window.print(); },
-    bell() { return openBell(); },
-    backupDb(el) { return downloadXlsx('/admin/backup', el); },
-    exportXlsx(el) {
-      const q = new URLSearchParams();
-      const k = document.getElementById('expKelas');
-      const s = document.getElementById('expSemester');
-      if (k && k.value) q.set('class_id', k.value);
-      if (s && s.value) q.set('semester', s.value);
-      const qs = q.toString();
-      return downloadXlsx(`/admin/export/${el.dataset.type}${qs ? '?' + qs : ''}`, el);
-    },
-    tutupRapor() { closeRapor(); },
-    toggleAllSiswa(el) { document.querySelectorAll('input.pick-siswa').forEach((i) => { i.checked = el.checked; }); },
-    closeImport() { closeModal(); route(); },
-    async logout() { await api('/logout', 'POST', {}); me = null; location.hash = ''; renderLogin(); },
-    toggleSide() { document.getElementById('side').classList.toggle('open'); },
-    closeModal,
-    openRespond(el) {
-      const c = complaintsCache.find((x) => String(x.id) === String(el.dataset.id));
-      if (!c) return;
-      openModal(`<h2>${esc(c.subject)}</h2>
-        <p class="muted small">${esc(c.user_name)} (${esc(roleLabel(c.user_role))}) &bull; ${fdate(c.created_at)} &bull; ${esc(c.category)}</p>
-        <p style="margin:.8rem 0;max-width:520px;white-space:pre-wrap">${esc(c.body)}</p>
-        <form class="form" data-form="respondPengaduan" data-id="${c.id}">
-          <div class="field"><label>Status</label><select name="status">${['baru', 'diproses', 'selesai', 'ditolak'].map((s) => `<option value="${s}" ${c.status === s ? 'selected' : ''}>${CS_LABEL[s]}</option>`).join('')}</select></div>
-          <div class="field"><label>Tanggapan</label><textarea name="response" maxlength="1000">${esc(c.response || '')}</textarea></div>
-          <div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Tutup</button><button class="btn" type="submit">Simpan</button></div></form>`);
-    },
-    allHadir() { document.querySelectorAll('.abs-status').forEach((s) => { s.value = 'hadir'; }); },
-    async tutupSesi(el) {
-      if (!confirm('Tutup sesi absensi ini?')) return;
-      await api('/absensi/guru/sesi/tutup', 'POST', { session_id: Number(el.dataset.id) });
-      toast('Sesi absensi ditutup'); route();
-    },
-    async absenMandiri(el) {
-      if (!confirm('Kirim absensi sekarang? Absensi hanya dapat dilakukan satu kali.')) return;
-      await api('/absensi/siswa/absen', 'POST', { session_id: Number(el.dataset.id) });
-      toast('Absensi berhasil dicatat'); route();
-    },
-    refreshAbsen() { route(); },
-    async staffIn() { await api('/absensi/staf/masuk', 'POST', {}); toast('Absen masuk tercatat'); route(); },
-    async staffOut() { await api('/absensi/staf/pulang', 'POST', {}); toast('Absen pulang tercatat'); route(); },
-    pw() {
-      openModal(`<h2>Ganti Password</h2><form class="form" data-form="changePw">
-        <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
-        <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
-        <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Simpan</button></div></form>`);
-    },
-    async del(el) { if (!confirm('Hapus data ini?')) return; await api(el.dataset.url, 'DELETE'); toast('Data dihapus'); route(); },
-    async resetPw(el) {
-      const pw = prompt('Password baru (min. 8 karakter):'); if (!pw) return;
-      await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw }); toast('Password direset');
-    },
-    async toggleActive(el) { await api('/admin/users/' + el.dataset.id, 'PUT', { active: el.dataset.active === '1' }); route(); },
-    async activatePeriod(el) { await api('/admin/periods/' + el.dataset.id + '/activate', 'PUT', {}); toast('Periode diaktifkan'); route(); }
-  };
+    async bayarSPP(el) {
+      const id = Number(el.dataset.id);
+      const amount = prompt('Masukkan nominal pembayaran:');
 
-  const CHANGES = {
-    raporSemester(el) { const o = document.getElementById('raporView'); if (o) showRapor(o.dataset.url, el.value).catch((e) => toast(e.message, false)); },
-    pickRaporKelas(el) { location.hash = '#/rapor/' + el.value; },
-    pickAssess(el) { location.hash = `#/class/${el.dataset.tid}/input/${el.value}`; },
-    setHomeroom(el) {
-      api('/admin/classes/' + el.dataset.id + '/homeroom', 'PUT', { teacher_id: el.value ? Number(el.value) : null })
-        .then(() => toast('Wali kelas tersimpan'))
-        .catch((e) => { toast(e.message, false); route(); });
-    },
-    pickNaikKelas(el) { location.hash = '#/naik/' + el.value; },
-    restoreAlumni(el) {
-      if (!el.value) return;
-      api('/admin/students/' + el.dataset.id + '/restore', 'PUT', { class_id: Number(el.value) })
-        .then(() => { toast('Alumni dikembalikan ke kelas'); route(); })
-        .catch((e) => { toast(e.message, false); route(); });
-    } };
+      if (amount === null) return;
 
-  document.addEventListener('submit', async (e) => {
-    const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault();
-    try { await FORMS[f.dataset.form](Object.fromEntries(new FormData(f)), f); } catch (err) { toast(err.message, false); }
-  });
-  document.addEventListener('click', async (e) => {
-    const el = e.target.closest('[data-action]'); if (!el) return;
-    try { await ACTIONS[el.dataset.action](el, e); } catch (err) { toast(err.message, false); }
-  });
-  document.addEventListener('change', (e) => {
-    const el = e.target.closest('[data-change]'); if (el) CHANGES[el.dataset.change](el);
-  });
-  window.addEventListener('hashchange', route);
-  (async function init() {
-    try { const r = await api('/me'); me = r.user; route(); }
-    catch (e) { if (!me) renderLogin(); }
-  })();
-})();  const ACTIONS = {
-    bukaRapor(el) { return showRapor(el.dataset.url); },
-    cetakRapor() { window.print(); },
-    bell() { return openBell(); },
-    backupDb(el) { return downloadXlsx('/admin/backup', el); },
-    exportXlsx(el) {
-      const q = new URLSearchParams();
-      const k = document.getElementById('expKelas');
-      const s = document.getElementById('expSemester');
-      if (k && k.value) q.set('class_id', k.value);
-      if (s && s.value) q.set('semester', s.value);
-      const qs = q.toString();
-      return downloadXlsx(`/admin/export/${el.dataset.type}${qs ? '?' + qs : ''}`, el);
+      const nominal = Number(amount);
+
+      if (!Number.isSafeInteger(nominal) || nominal <= 0) {
+        alert('Nominal pembayaran tidak valid!');
+        return;
+      }
+
+      if (!confirm(
+        'Catat pembayaran sebesar Rp ' +
+        nominal.toLocaleString('id-ID') + '?'
+      )) return;
+
+      try {
+        await api(`/portal/keuangan/${id}/bayar`, 'POST', {
+          amount: nominal
+        });
+
+        alert('Pembayaran berhasil dicatat!');
+        route();
+      } catch (e) {
+        alert(e.message);
+      }
     },
-    tutupRapor() { closeRapor(); },
-    toggleAllSiswa(el) {
-      document.querySelectorAll('input.pick-siswa').forEach((i) => {
-        i.checked = el.checked;
+
+    async cetakBuktiSPP(el) {
+      const id = Number(el.dataset.id);
+      const win = window.open('', '_blank');
+
+      if (!win) {
+        alert('Izinkan pop-up pada browser terlebih dahulu.');
+        return;
+      }
+
+      try {
+        const data = await api('/portal/keuangan/riwayat');
+
+        const p = (data.rows || []).find(
+          item => Number(item.id) === id
+        );
+
+        if (!p) {
+          win.close();
+          alert('Data pembayaran tidak ditemukan.');
+          return;
+        }
+
+        const rupiah = n =>
+          'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+        const tanggal = value => {
+          if (!value) return '-';
+
+          const d = new Date(value + 'T00:00:00');
+
+          return isNaN(d.getTime())
+            ? value
+            : d.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+              });
+        };
+
+        win.document.write(`
+          <!DOCTYPE html>
+          <html lang="id">
+          <head>
+            <meta charset="UTF-8">
+            <title>Bukti Pembayaran SPP</title>
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                padding: 30px;
+                color: #222;
+              }
+              .receipt {
+                max-width: 650px;
+                margin: auto;
+                border: 1px solid #ddd;
+                padding: 30px;
+              }
+              h2 { text-align: center; }
+              .row {
+                display: flex;
+                justify-content: space-between;
+                gap: 15px;
+                padding: 12px 0;
+                border-bottom: 1px solid #eee;
+              }
+              .total {
+                font-size: 20px;
+                font-weight: bold;
+                color: #087443;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 30px;
+              }
+              button {
+                display: block;
+                margin: 25px auto;
+                padding: 12px 25px;
+                background: #1677d2;
+                color: white;
+                border: none;
+                cursor: pointer;
+              }
+              @media print {
+                button { display: none; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="receipt">
+              <h2>BUKTI PEMBAYARAN SPP</h2>
+              <p style="text-align:center">SIAKAD OBE</p>
+
+              <div class="row">
+                <span>No. Transaksi</span>
+                <b>SPP-${Number(p.id)}</b>
+              </div>
+              <div class="row">
+                <span>Nama Siswa</span>
+                <b>${esc(p.student_name || '-')}</b>
+              </div>
+              <div class="row">
+                <span>NIS</span>
+                <b>${esc(p.nis || '-')}</b>
+              </div>
+              <div class="row">
+                <span>Kelas</span>
+                <b>${esc(p.class_name || '-')}</b>
+              </div>
+              <div class="row">
+                <span>Tagihan</span>
+                <b>${esc(p.title || '-')}</b>
+              </div>
+              <div class="row">
+                <span>Periode</span>
+                <b>${esc(p.period || '-')}</b>
+              </div>
+              <div class="row">
+                <span>Tanggal Pembayaran</span>
+                <b>${esc(tanggal(p.payment_date))}</b>
+              </div>
+              <div class="row">
+                <span>Metode</span>
+                <b>${esc(p.method || 'Tunai')}</b>
+              </div>
+              <div class="row total">
+                <span>Total Dibayar</span>
+                <b>${rupiah(p.amount)}</b>
+              </div>
+              <div class="row">
+                <span>Petugas</span>
+                <b>${esc(p.recorded_by_name || '-')}</b>
+              </div>
+              <div class="row">
+                <span>Catatan</span>
+                <b>${esc(p.note || '-')}</b>
+              </div>
+              <div class="footer">
+                <p>Terima kasih telah melakukan pembayaran.</p>
+                <b>SIAKAD OBE</b>
+              </div>
+            </div>
+            <button onclick="window.print()">Cetak / Simpan PDF</button>
+          </body>
+          </html>
+        `);
+
+        win.document.close();
+        win.focus();
+
+      } catch (e) {
+        win.close();
+        alert(e.message || 'Gagal mencetak bukti pembayaran.');
+      }
+    },
+
+    // ================= TAMPILKAN LAPORAN SPP =================
+
+    async tampilkanLaporanSPP() {
+      const mulai =
+        document.getElementById('laporanMulai')?.value || '';
+
+      const sampai =
+        document.getElementById('laporanSampai')?.value || '';
+
+      const siswaId =
+        document.getElementById('laporanSiswa')?.value || '';
+
+      const hasil =
+        document.getElementById('hasilLaporanSPP');
+
+      if (!hasil) {
+        toast('Area laporan tidak ditemukan.', false);
+        return;
+      }
+
+      if (mulai && sampai && mulai > sampai) {
+        alert('Tanggal awal tidak boleh melebihi tanggal akhir.');
+        return;
+      }
+
+      hasil.innerHTML = '<p>Memuat laporan...</p>';
+
+      try {
+        const params = new URLSearchParams();
+
+        if (mulai) params.set('mulai', mulai);
+        if (sampai) params.set('sampai', sampai);
+        if (siswaId) params.set('siswa_id', siswaId);
+
+        const data = await api(
+          '/portal/keuangan/laporan?' + params.toString()
+        );
+
+        window.dataLaporanSPP = data;
+
+        const total = data.total || {};
+
+        const rupiah = n =>
+          'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+        hasil.innerHTML = `
+          <h3>Total Transaksi: ${Number(total.total_transaksi || 0)}</h3>
+          <h2>Total Pemasukan: ${rupiah(total.total_pembayaran)}</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Siswa</th>
+                  <th>Tagihan</th>
+                  <th>Tanggal</th>
+                  <th>Metode</th>
+                  <th>Nominal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(data.rows || []).map((p, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td>${esc(p.student_name || '-')}</td>
+                    <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
+                    <td>${esc(p.payment_date || '-')}</td>
+                    <td>${esc(p.method || 'Tunai')}</td>
+                    <td>${rupiah(p.amount)}</td>
+                  </tr>
+                `).join('') || `
+                  <tr>
+                    <td colspan="6">Tidak ada transaksi.</td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px">
+            <button type="button" onclick="window.print()">
+              🖨️ Cetak Laporan
+            </button>
+            <button type="button" data-action="exportLaporanSPP">
+              📥 Export Excel
+            </button>
+          </div>
+        `;
+
+      } catch (e) {
+        hasil.innerHTML =
+          'Gagal memuat laporan: ' + esc(e.message);
+      }
+    },
+
+    // ================= EXPORT LAPORAN SPP =================
+
+    async exportLaporanSPP() {
+      const data = window.dataLaporanSPP;
+
+      if (!data || !data.rows) {
+        alert('Tampilkan laporan terlebih dahulu!');
+        return;
+      }
+
+      const rows = [
+        ['LAPORAN KEUANGAN SPP'],
+        ['Total Transaksi', data.total?.total_transaksi || 0],
+        ['Total Pemasukan', data.total?.total_pembayaran || 0],
+        [],
+        ['No', 'Nama Siswa', 'Tagihan', 'Periode', 'Tanggal', 'Metode', 'Nominal']
+      ];
+
+      data.rows.forEach((p, i) => {
+        rows.push([
+          i + 1,
+          p.student_name || '-',
+          p.title || '-',
+          p.period || '-',
+          p.payment_date || '-',
+          p.method || 'Tunai',
+          Number(p.amount || 0)
+        ]);
       });
-    },
-    closeImport() { closeModal(); route(); },
-    async logout() {
-      await api('/logout', 'POST', {});
-      me = null;
-      location.hash = '';
-      renderLogin();
-    },
-    toggleSide() {
-      document.getElementById('side').classList.toggle('open');
-    },
-    closeModal,
-    openRespond(el) {
-      const c = complaintsCache.find((x) => String(x.id) === String(el.dataset.id));
-      if (!c) return;
-      openModal(`<h2>${esc(c.subject)}</h2>
-        <p class="muted small">${esc(c.user_name)} (${esc(roleLabel(c.user_role))}) &bull; ${fdate(c.created_at)} &bull; ${esc(c.category)}</p>
-        <p style="margin:.8rem 0;max-width:520px;white-space:pre-wrap">${esc(c.body)}</p>
-        <form class="form" data-form="respondPengaduan" data-id="${c.id}">
-          <div class="field"><label>Status</label><select name="status">${['baru', 'diproses', 'selesai', 'ditolak'].map((s) => `<option value="${s}" ${c.status === s ? 'selected' : ''}>${CS_LABEL[s]}</option>`).join('')}</select></div>
-          <div class="field"><label>Tanggapan</label><textarea name="response" maxlength="1000">${esc(c.response || '')}</textarea></div>
-          <div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Tutup</button><button class="btn" type="submit">Simpan</button></div></form>`);
-    },
-    allHadir() {
-      document.querySelectorAll('.abs-status').forEach((s) => {
-        s.value = 'hadir';
+
+      const csv = '\uFEFF' + rows.map(row =>
+        row.map(value =>
+          '"' + String(value ?? '').replace(/"/g, '""') + '"'
+        ).join(';')
+      ).join('\r\n');
+
+      const blob = new Blob([csv], {
+        type: 'text/csv;charset=utf-8;'
       });
-    },
-    async tutupSesi(el) {
-      if (!confirm('Tutup sesi absensi ini?')) return;
-      await api('/absensi/guru/sesi/tutup', 'POST', {
-        session_id: Number(el.dataset.id)
-      });
-      toast('Sesi absensi ditutup');
-      route();
-    },
-    async absenMandiri(el) {
-      if (!confirm('Kirim absensi sekarang? Absensi hanya dapat dilakukan satu kali.')) return;
-      await api('/absensi/siswa/absen', 'POST', {
-        session_id: Number(el.dataset.id)
-      });
-      toast('Absensi berhasil dicatat');
-      route();
-    },
-    refreshAbsen() { route(); },
-    async staffIn() {
-      await api('/absensi/staf/masuk', 'POST', {});
-      toast('Absen masuk tercatat');
-      route();
-    },
-    async staffOut() {
-      await api('/absensi/staf/pulang', 'POST', {});
-      toast('Absen pulang tercatat');
-      route();
-    },
-    pw() {
-      openModal(`<h2>Ganti Password</h2><form class="form" data-form="changePw">
-        <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
-        <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
-        <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Simpan</button></div></form>`);
-    },
-    forgotPw() {
-      openModal(`<h2>Lupa Password</h2>
-        <p class="muted small">Masukkan username dan email yang sudah terdaftar pada akun SIAKAD OBE. Permintaan akan diperiksa admin sekolah.</p>
-        <form class="form" data-form="forgotPw">
-          <div class="field"><label>Username</label><input name="username" autocomplete="username" required maxlength="80"></div>
-          <div class="field"><label>Email terdaftar</label><input name="email" type="email" autocomplete="email" required maxlength="120"></div>
-          <p class="form-msg"></p><div class="actions"><button type="button" class="btn ghost" data-action="closeModal">Batal</button><button class="btn" type="submit">Kirim Permintaan</button></div>
-        </form>`);
-    },
-    async approveReset(el) {
-      if (!confirm('Setujui permintaan ini dan buat password sementara?')) return;
-      const r = await api('/password-reset/admin/' + Number(el.dataset.id) + '/approve', 'POST', {});
-      openModal(`<h2>Password Sementara</h2>
-        <p>Permintaan disetujui. Berikan password ini kepada pengguna secara pribadi.</p>
-        <div class="card" style="font-size:1.2rem;font-weight:700;letter-spacing:1px;word-break:break-all">${esc(r.temporaryPassword || r.temporary_password)}</div>
-        <p class="muted small">Password ini hanya ditampilkan sekarang. Pengguna wajib menggantinya setelah login.</p>
-        <div class="actions"><button class="btn ghost" data-action="copyResetPw" data-password="${esc(r.temporaryPassword || r.temporary_password)}">Salin Password</button><button class="btn" data-action="closeModal">Selesai</button></div>`);
-    },
-    async rejectReset(el) {
-      if (!confirm('Tolak permintaan reset password ini?')) return;
-      await api('/password-reset/admin/' + Number(el.dataset.id) + '/reject', 'POST', {});
-      toast('Permintaan ditolak');
-      route();
-    },
-    refreshReset() { route(); },
-    copyResetPw(el) {
-      navigator.clipboard.writeText(el.dataset.password)
-        .then(() => toast('Password disalin'))
-        .catch(() => toast('Gagal menyalin password', false));
-    },
-    async del(el) {
-      if (!confirm('Hapus data ini?')) return;
-      await api(el.dataset.url, 'DELETE');
-      toast('Data dihapus');
-      route();
-    },
-    async resetPw(el) {
-      const pw = prompt('Password baru (min. 8 karakter):');
-      if (!pw) return;
-      await api('/admin/users/' + el.dataset.id, 'PUT', { password: pw });
-      toast('Password direset');
-    },
-    async toggleActive(el) {
-      await api('/admin/users/' + el.dataset.id, 'PUT', {
-        active: el.dataset.active === '1'
-      });
-      route();
-    },
-    async activatePeriod(el) {
-      await api('/admin/periods/' + el.dataset.id + '/activate', 'PUT', {});
-      toast('Periode diaktifkan');
-      route();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+
+      a.href = url;
+      a.download = 'Laporan_Keuangan_SPP.csv';
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      toast('Laporan berhasil diekspor!');
     }
   };
+
+  // ================= CHANGE HANDLERS =================
 
   const CHANGES = {
     raporSemester(el) {
       const o = document.getElementById('raporView');
-      if (o) showRapor(o.dataset.url, el.value).catch((e) => toast(e.message, false));
+      if (o) {
+        showRapor(o.dataset.url, el.value)
+          .catch(e => toast(e.message, false));
+      }
     },
+
     pickRaporKelas(el) {
       location.hash = '#/rapor/' + el.value;
     },
+
     pickAssess(el) {
       location.hash = `#/class/${el.dataset.tid}/input/${el.value}`;
     },
+
     setHomeroom(el) {
       api('/admin/classes/' + el.dataset.id + '/homeroom', 'PUT', {
         teacher_id: el.value ? Number(el.value) : null
       })
         .then(() => toast('Wali kelas tersimpan'))
-        .catch((e) => {
+        .catch(e => {
           toast(e.message, false);
           route();
         });
     },
+
     pickNaikKelas(el) {
       location.hash = '#/naik/' + el.value;
     },
+
     restoreAlumni(el) {
       if (!el.value) return;
+
       api('/admin/students/' + el.dataset.id + '/restore', 'PUT', {
         class_id: Number(el.value)
       })
@@ -1627,19 +2623,30 @@ admin: {
           toast('Alumni dikembalikan ke kelas');
           route();
         })
-        .catch((e) => {
+        .catch(e => {
           toast(e.message, false);
           route();
         });
     }
   };
 
+  // ================= EVENT LISTENERS =================
+
   document.addEventListener('submit', async (e) => {
     const f = e.target.closest('form[data-form]');
     if (!f) return;
+
     e.preventDefault();
+
     try {
-      await FORMS[f.dataset.form](Object.fromEntries(new FormData(f)), f);
+      const handler = FORMS[f.dataset.form];
+
+      if (!handler) {
+        throw new Error('Handler form tidak ditemukan: ' + f.dataset.form);
+      }
+
+      await handler(Object.fromEntries(new FormData(f)), f);
+
     } catch (err) {
       toast(err.message, false);
     }
@@ -1648,8 +2655,16 @@ admin: {
   document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
+
     try {
-      await ACTIONS[el.dataset.action](el, e);
+      const handler = ACTIONS[el.dataset.action];
+
+      if (!handler) {
+        throw new Error('Handler aksi tidak ditemukan: ' + el.dataset.action);
+      }
+
+      await handler(el, e);
+
     } catch (err) {
       toast(err.message, false);
     }
@@ -1657,8 +2672,12 @@ admin: {
 
   document.addEventListener('change', (e) => {
     const el = e.target.closest('[data-change]');
-    if (el) CHANGES[el.dataset.change](el);
+    if (el) {
+      CHANGES[el.dataset.change](el);
+    }
   });
+
+  // ================= INISIALISASI =================
 
   window.addEventListener('hashchange', route);
 
@@ -1671,3 +2690,5 @@ admin: {
       if (!me) renderLogin();
     }
   })();
+
+})();

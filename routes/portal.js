@@ -20,6 +20,39 @@ const todayStr = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
 const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
 const fail = (res, e, msg) => { console.error(e); res.status(500).json({ error: msg }); };
 const bad = (res, msg) => res.status(400).json({ error: msg });
+function validImageDataUrl(value) {
+  if (typeof value !== 'string') return false;
+
+  const match = value.match(
+    /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/
+  );
+
+  if (!match) return false;
+
+  const buffer = Buffer.from(match[2], 'base64');
+
+  // Maksimal ukuran foto 1 MB
+ if (!buffer.length || buffer.length > 5 * 1024 * 1024) return false;
+
+  const type = match[1];
+
+  if (type === 'jpeg') {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+
+  if (type === 'png') {
+    return buffer.subarray(0, 8).equals(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    );
+  }
+
+  if (type === 'webp') {
+    return buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP';
+  }
+
+  return false;
+}
 
 function isValidDate(s) {
   if (!RE_DATE.test(s || '')) return false;
@@ -195,12 +228,505 @@ router.get('/akademik/jadwal', async (req, res) => {
     res.json({ rows: rows.map((r) => ({ ...r, day_name: DAY_NAMES[Number(r.day_of_week)] || '-' })) });
   } catch (e) { fail(res, e, 'Gagal memuat jadwal'); }
 });
+/* ======================= EKSTRAKURIKULER ======================= */
 
+// Melihat daftar ekstrakurikuler
+router.get('/ekskul', async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT e.*, u.name AS coach_name,
+        (SELECT COUNT(*) FROM extracurricular_members m
+         WHERE m.extracurricular_id = e.id
+         AND m.status = 'aktif') AS total_members
+      FROM extracurriculars e
+      LEFT JOIN users u ON u.id = e.coach_id
+      ORDER BY e.name
+    `).all();
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat ekstrakurikuler');
+  }
+});
+
+// Admin menambahkan ekstrakurikuler
+router.post('/ekskul', role('admin'), async (req, res) => {
+  try {
+    const name = clip(req.body.name, 100);
+    const description = clip(req.body.description, 500);
+    const schedule = clip(req.body.schedule, 150);
+    const coachId = Number(req.body.coach_id) || null;
+    const quota = Math.max(0, Number(req.body.quota) || 0);
+
+    if (name.length < 3) {
+      return bad(res, 'Nama ekstrakurikuler minimal 3 karakter');
+    }
+
+    if (coachId) {
+      const coach = await db.prepare(
+        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND active = 1"
+      ).get(coachId);
+
+      if (!coach) return bad(res, 'Pembina tidak ditemukan');
+    }
+
+    const result = await db.prepare(`
+      INSERT INTO extracurriculars
+      (name, description, coach_id, schedule, quota)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(name, description || null, coachId, schedule || null, quota);
+
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (e) {
+    fail(res, e, 'Gagal menambahkan ekstrakurikuler');
+  }
+});
+
+// Siswa mendaftar ekstrakurikuler
+router.post('/ekskul/:id/daftar', role('siswa'), async (req, res) => {
+  try {
+    const kegiatan = await db.prepare(`
+      SELECT id, quota FROM extracurriculars
+      WHERE id = ? AND active = 1
+    `).get(Number(req.params.id));
+
+    if (!kegiatan) {
+      return res.status(404).json({ error: 'Kegiatan tidak ditemukan' });
+    }
+
+    const siswa = await db.prepare(
+      'SELECT id FROM students WHERE user_id = ?'
+    ).get(req.user.id);
+
+    if (!siswa) return bad(res, 'Data siswa tidak ditemukan');
+
+    const existing = await db.prepare(`
+      SELECT id FROM extracurricular_members
+      WHERE extracurricular_id = ? AND student_id = ?
+    `).get(kegiatan.id, siswa.id);
+
+    if (existing) {
+      return bad(res, 'Kamu sudah terdaftar pada kegiatan ini');
+    }
+
+    if (Number(kegiatan.quota) > 0) {
+      const total = await db.prepare(`
+        SELECT COUNT(*) AS total FROM extracurricular_members
+        WHERE extracurricular_id = ? AND status = 'aktif'
+      `).get(kegiatan.id);
+
+      if (Number(total.total) >= Number(kegiatan.quota)) {
+        return bad(res, 'Kuota ekstrakurikuler sudah penuh');
+      }
+    }
+
+    await db.prepare(`
+      INSERT INTO extracurricular_members
+      (extracurricular_id, student_id)
+      VALUES (?, ?)
+    `).run(kegiatan.id, siswa.id);
+
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    fail(res, e, 'Gagal mendaftar ekstrakurikuler');
+  }
+});
+
+// Daftar ekstrakurikuler yang diikuti siswa
+router.get('/ekskul/saya', role('siswa'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT e.name, e.schedule, u.name AS coach_name,
+             m.status, m.joined_at
+      FROM extracurricular_members m
+      JOIN extracurriculars e ON e.id = m.extracurricular_id
+      LEFT JOIN users u ON u.id = e.coach_id
+      JOIN students s ON s.id = m.student_id
+      WHERE s.user_id = ?
+      ORDER BY e.name
+    `).all(req.user.id);
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat kegiatan siswa');
+  }
+});
+
+/* ======================= BIMBINGAN KONSELING ======================= */
+
+// Hanya admin dan kepala sekolah yang dapat melihat catatan BK
+router.get('/bk', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT b.*, u.name AS student_name, s.nis,
+             c.name AS class_name, p.name AS counselor_name
+      FROM counseling_records b
+      JOIN students s ON s.id = b.student_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      LEFT JOIN users p ON p.id = b.counselor_id
+      ORDER BY b.session_date DESC, b.id DESC
+    `).all();
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat catatan BK');
+  }
+});
+
+// Menambahkan catatan BK
+router.post('/bk', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const studentId = Number(req.body.student_id);
+    const category = clip(req.body.category, 50);
+    const notes = clip(req.body.notes, 2000);
+    const followUp = clip(req.body.follow_up, 1000);
+    const sessionDate = clip(req.body.session_date, 10);
+
+    if (!studentId || !category || notes.length < 5) {
+      return bad(res, 'Lengkapi data bimbingan terlebih dahulu');
+    }
+
+    if (!isValidDate(sessionDate)) {
+      return bad(res, 'Tanggal bimbingan tidak valid');
+    }
+
+    const student = await db.prepare(
+      'SELECT id FROM students WHERE id = ?'
+    ).get(studentId);
+
+    if (!student) return bad(res, 'Siswa tidak ditemukan');
+
+    const result = await db.prepare(`
+      INSERT INTO counseling_records
+      (student_id, counselor_id, category, notes, follow_up, session_date)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      studentId,
+      req.user.id,
+      category,
+      notes,
+      followUp || null,
+      sessionDate
+    );
+
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (e) {
+    fail(res, e, 'Gagal menyimpan catatan BK');
+  }
+});
+/* ======================= KEUANGAN / SPP ======================= */
+
+// Admin dan kepala sekolah melihat seluruh tagihan
+router.get('/keuangan', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT
+        i.*,
+        u.name AS student_name,
+        s.nis,
+        c.name AS class_name,
+        COALESCE((
+          SELECT SUM(p.amount)
+          FROM spp_payments p
+          WHERE p.invoice_id = i.id
+        ), 0) AS amount_paid
+      FROM spp_invoices i
+      JOIN students s ON s.id = i.student_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      ORDER BY i.id DESC
+    `).all();
+
+    const total = await db.prepare(`
+      SELECT
+        COUNT(*) AS total_tagihan,
+        COALESCE(SUM(amount), 0) AS total_nominal
+      FROM spp_invoices
+    `).get();
+
+    res.json({ rows, total });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat data keuangan');
+  }
+});
+// Admin mengambil daftar siswa untuk pilihan tagihan
+router.get('/keuangan/siswa', role('admin'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT
+        s.id,
+        s.nis,
+        u.name AS student_name,
+        c.name AS class_name
+      FROM students s
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      ORDER BY u.name
+    `).all();
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat daftar siswa');
+  }
+});
+// Admin membuat tagihan SPP
+router.post('/keuangan/tagihan', role('admin'), async (req, res) => {
+  try {
+    const studentId = Number(req.body.student_id);
+    const title = clip(req.body.title, 100);
+    const period = clip(req.body.period, 30);
+    const amount = Math.floor(Number(req.body.amount));
+    const dueDate = clip(req.body.due_date, 10);
+
+    if (!studentId || !title || !period || !Number.isSafeInteger(amount) || amount <= 0) {
+      return bad(res, 'Lengkapi data tagihan dengan benar');
+    }
+
+    if (dueDate && !isValidDate(dueDate)) {
+      return bad(res, 'Tanggal jatuh tempo tidak valid');
+    }
+
+    const student = await db.prepare(
+      'SELECT id FROM students WHERE id = ?'
+    ).get(studentId);
+
+    if (!student) return bad(res, 'Siswa tidak ditemukan');
+
+    const result = await db.prepare(`
+      INSERT INTO spp_invoices
+      (student_id, title, period, amount, due_date, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      studentId,
+      title,
+      period,
+      amount,
+      dueDate || null,
+      req.user.id
+    );
+
+    res.status(201).json({ id: result.lastInsertRowid });
+  } catch (e) {
+    fail(res, e, 'Gagal membuat tagihan SPP');
+  }
+});
+
+// Siswa melihat tagihan miliknya sendiri
+router.get('/keuangan/saya', role('siswa'), async (req, res) => {
+  try {
+    const student = await db.prepare(
+      'SELECT id FROM students WHERE user_id = ?'
+    ).get(req.user.id);
+
+    if (!student) return bad(res, 'Data siswa tidak ditemukan');
+
+    const rows = await db.prepare(`
+      SELECT
+        i.*,
+        COALESCE((
+          SELECT SUM(p.amount)
+          FROM spp_payments p
+          WHERE p.invoice_id = i.id
+        ), 0) AS amount_paid
+      FROM spp_invoices i
+      WHERE i.student_id = ?
+      ORDER BY i.id DESC
+    `).all(student.id);
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat tagihan siswa');
+  }
+});
+
+// Admin mencatat pembayaran SPP
+router.post('/keuangan/:id/bayar', role('admin'), async (req, res) => {
+  try {
+    const invoiceId = Number(req.params.id);
+    const amount = Math.floor(Number(req.body.amount));
+    const paymentDate = clip(req.body.payment_date, 10) || todayStr();
+    const method = clip(req.body.method, 30) || 'Tunai';
+    const note = clip(req.body.note, 300);
+
+    if (!invoiceId || !Number.isSafeInteger(amount) || amount <= 0) {
+      return bad(res, 'Nominal pembayaran tidak valid');
+    }
+
+    if (!isValidDate(paymentDate)) {
+      return bad(res, 'Tanggal pembayaran tidak valid');
+    }
+
+    const invoice = await db.prepare(`
+      SELECT * FROM spp_invoices WHERE id = ?
+    `).get(invoiceId);
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Tagihan tidak ditemukan' });
+    }
+
+    const paid = await db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM spp_payments WHERE invoice_id = ?
+    `).get(invoiceId);
+
+    const remaining = Number(invoice.amount) - Number(paid.total);
+
+    if (remaining <= 0) {
+      return bad(res, 'Tagihan ini sudah lunas');
+    }
+
+    if (amount > remaining) {
+      return bad(res, 'Pembayaran melebihi sisa tagihan');
+    }
+
+    await db.prepare(`
+      INSERT INTO spp_payments
+      (invoice_id, amount, payment_date, method, note, recorded_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      invoiceId,
+      amount,
+      paymentDate,
+      method,
+      note || null,
+      req.user.id
+    );
+
+    const newPaid = Number(paid.total) + amount;
+    const status = newPaid >= Number(invoice.amount)
+      ? 'lunas'
+      : 'belum_lunas';
+
+    await db.prepare(`
+      UPDATE spp_invoices SET status = ? WHERE id = ?
+    `).run(status, invoiceId);
+
+    res.json({
+      ok: true,
+      amount_paid: newPaid,
+      remaining: Number(invoice.amount) - newPaid,
+      status
+    });
+  } catch (e) {
+    fail(res, e, 'Gagal mencatat pembayaran');
+  }
+});
+// Admin dan kepala sekolah melihat riwayat pembayaran SPP
+router.get('/keuangan/riwayat', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT
+        p.id,
+        p.amount,
+        p.payment_date,
+        p.method,
+        p.note,
+        p.created_at,
+        i.title,
+        i.period,
+        i.amount AS total_tagihan,
+        u.name AS student_name,
+        s.nis,
+        c.name AS class_name,
+        r.name AS recorded_by_name
+      FROM spp_payments p
+      JOIN spp_invoices i ON i.id = p.invoice_id
+      JOIN students s ON s.id = i.student_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      LEFT JOIN users r ON r.id = p.recorded_by
+      ORDER BY p.payment_date DESC, p.id DESC
+      LIMIT 500
+    `).all();
+
+    const total = await db.prepare(`
+      SELECT
+        COUNT(*) AS total_transaksi,
+        COALESCE(SUM(amount), 0) AS total_pembayaran
+      FROM spp_payments
+    `).get();
+
+    res.json({ rows, total });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat riwayat pembayaran');
+  }
+});
+// ================================
+// LAPORAN KEUANGAN SPP
+// ================================
+
+router.get('/keuangan/laporan', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const { mulai, sampai, siswa_id } = req.query;
+
+    let sql = `
+      SELECT
+        p.id,
+        p.amount,
+        p.payment_date,
+        p.method,
+        p.note,
+        i.title,
+        i.period,
+        u.name AS student_name,
+        s.nis,
+        c.name AS class_name,
+        r.name AS recorded_by_name
+      FROM spp_payments p
+      JOIN spp_invoices i ON i.id = p.invoice_id
+      JOIN students s ON s.id = i.student_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      LEFT JOIN users r ON r.id = p.recorded_by
+      WHERE 1=1
+    `;
+
+    const params = [];
+
+    if (mulai) {
+      sql += ` AND p.payment_date >= ?`;
+      params.push(mulai);
+    }
+
+    if (sampai) {
+      sql += ` AND p.payment_date <= ?`;
+      params.push(sampai);
+    }
+
+    if (siswa_id) {
+      sql += ` AND s.id = ?`;
+      params.push(Number(siswa_id));
+    }
+
+    sql += ` ORDER BY p.payment_date DESC, p.id DESC`;
+
+    const rows = await db.prepare(sql).all(...params);
+
+    const total = rows.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0
+    );
+
+    res.json({
+      rows,
+      total: {
+        total_transaksi: rows.length,
+        total_pembayaran: total
+      }
+    });
+
+  } catch (e) {
+    fail(res, e, 'Gagal memuat laporan keuangan');
+  }
+});
 /* ================================ AKUN ================================ */
 
 router.get('/akun', async (req, res) => {
   try {
-    const u = await db.prepare('SELECT id, username, name, role, email, phone FROM users WHERE id = ?').get(req.user.id);
+    const u = await db.prepare(
+  'SELECT id, username, name, role, email, phone, avatar_data FROM users WHERE id = ?'
+).get(req.user.id);
     let siswa = null;
     if (req.user.role === 'siswa') {
       siswa = (await db.prepare(`
@@ -222,5 +748,35 @@ router.put('/akun', async (req, res) => {
     res.json({ ok: true });
   } catch (e) { fail(res, e, 'Gagal menyimpan akun'); }
 });
+// Upload atau ganti foto profil pengguna
+router.put('/akun/foto', async (req, res) => {
+  try {
+    const image = req.body.image;
 
+    if (!validImageDataUrl(image)) {
+      return bad(res, 'Foto tidak valid. Gunakan JPG, PNG, atau WEBP maksimal 1 MB.');
+    }
+
+    await db.prepare(
+      'UPDATE users SET avatar_data = ? WHERE id = ?'
+    ).run(image, req.user.id);
+
+    res.json({ ok: true });
+  } catch (e) {
+    fail(res, e, 'Gagal menyimpan foto profil');
+  }
+});
+
+// Hapus foto profil pengguna
+router.delete('/akun/foto', async (req, res) => {
+  try {
+    await db.prepare(
+      'UPDATE users SET avatar_data = NULL WHERE id = ?'
+    ).run(req.user.id);
+
+    res.json({ ok: true });
+  } catch (e) {
+    fail(res, e, 'Gagal menghapus foto profil');
+  }
+});
 module.exports = router;

@@ -12,7 +12,7 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(cookieParser());
 
 app.use('/api', require('./routes/auth'));
