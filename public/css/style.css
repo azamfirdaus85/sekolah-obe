@@ -476,7 +476,7 @@ tr:last-child td{border-bottom:none}
 
 /* RESPONSIVE */
 @media(max-width:900px){
-  :root{--ui-zoom:1}
+  :root{--ui-zoom:.85}
   .login-wrap{grid-template-columns:1fr}
   .login-hero{display:none}
   .login-box{box-shadow:none;border:none;padding:1.8rem 1.2rem}
@@ -502,6 +502,9 @@ tr:last-child td{border-bottom:none}
   .inline{flex-direction:column;align-items:stretch}
 }
 @media(max-width:560px){
+  :root{--ui-zoom:.8}
+  .top{padding:0 .8rem;gap:.5rem}
+  .who{display:none}
   .cards{grid-template-columns:1fr}
   .login-hero h1{font-size:2.2rem}
   .modal{min-width:0;width:100%}
