@@ -313,9 +313,13 @@ body{
 .who{margin-left:auto;display:flex;flex-direction:column;line-height:1.15;text-align:right}
 .who{font-weight:700;font-size:.92rem}
 .who em{font-style:normal;font-size:.75rem;color:var(--muted);font-weight:600}
-.content{padding:2rem;max-width:1240px;width:100%;margin:0 auto}
+
+/* Konten ikut melebar saat browser di-zoom out (tidak dibatasi 1240px lagi) */
+.content{padding:2rem;max-width:none;width:100%;margin:0}
+
 h1{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;margin-bottom:.35rem;line-height:1.15}
 h2{font-size:1.08rem;font-weight:800;margin-bottom:.85rem;letter-spacing:-.01em}
+h3{font-weight:700}
 p{line-height:1.6}
 
 .card{
@@ -450,6 +454,8 @@ tr:last-child td{border-bottom:none}
   padding:1.7rem;
   min-width:380px;
   max-width:92vw;
+  max-height:92vh;
+  overflow:auto;
   box-shadow:0 30px 80px rgba(0,0,0,.25);
 }
 .burger{display:none}
@@ -460,6 +466,7 @@ tr:last-child td{border-bottom:none}
 .actions{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
 .score{width:92px;padding:.55rem .6rem;border-radius:10px;border:1.5px solid var(--line);background:#fffcf2;font-size:.9rem}
 .loading{padding:2.4rem;color:var(--muted);text-align:center}
+.form:not(.inline){display:grid;gap:.2rem}
 .inline{display:flex;gap:.8rem;flex-wrap:wrap;align-items:end}
 .inline .field{flex:1;min-width:160px}
 
@@ -492,6 +499,7 @@ tr:last-child td{border-bottom:none}
 @media(max-width:560px){
   .cards{grid-template-columns:1fr}
   .login-hero h1{font-size:2.2rem}
+  .modal{min-width:0;width:100%}
 }
 
 /* ==================== ABSENSI (TAHAP 2) ==================== */
@@ -536,3 +544,79 @@ input.abs-note{width:100%;min-width:150px}
 .side nav::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 .side > div[style*="margin-top:auto"]{flex-shrink:0;margin-top:1rem}
 .modal textarea{width:100%;min-height:90px}
+
+/* ==================== KOMPONEN TAMBAHAN (EKSKUL, BK, KEUANGAN) ==================== */
+.page-head{margin:1.4rem 0 1rem}
+.page-head h1,.page-head h2{margin-bottom:.3rem}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1rem;margin:1rem 0}
+.stat-card{
+  background:linear-gradient(180deg, #ffffff 0%, #fffdf5 100%);
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:1.2rem 1.4rem;
+  box-shadow:var(--shadow-sm);
+  position:relative;
+  overflow:hidden;
+}
+.stat-card::after{
+  content:'';
+  position:absolute;
+  left:0;top:14%;bottom:14%;width:4px;
+  background:linear-gradient(180deg, var(--gold-1), var(--gold-5));
+  border-radius:0 4px 4px 0;
+}
+.stat-card h3{
+  font-size:.74rem;
+  font-weight:700;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  margin-bottom:.4rem;
+}
+.stat-card h2{font-size:1.5rem;font-weight:800;margin:0}
+
+.form-group{display:grid;gap:.5rem;margin-bottom:1.15rem}
+.form-group label{font-size:.82rem;font-weight:600;color:#121212;letter-spacing:.01em}
+.form-group input,
+.form-group select,
+.form-group textarea{
+  padding:.85rem 1rem;
+  border-radius:12px;
+  border:1.5px solid var(--champagne-2);
+  background:#FFFEFB;
+  font:inherit;
+  font-size:.92rem;
+  color:#121212;
+  transition:.2s ease;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus{
+  outline:none;
+  border-color:var(--gold-solid);
+  box-shadow:0 0 0 4px rgba(212,175,55,.12);
+  background:#fff;
+}
+
+#filterLaporanSPP{display:flex;gap:.8rem;flex-wrap:wrap;align-items:end;margin:1rem 0}
+#filterLaporanSPP .form-group{flex:1;min-width:170px;margin-bottom:0}
+
+/* Tombol polos di dalam kartu (Keuangan) dibuat senada dengan .btn */
+.card button:not([class]){
+  background:linear-gradient(135deg, #C9A86A 0%, #EADCA6 25%, #D4B878 50%, #F5E8B5 75%, #C9A86A 100%);
+  color:#121212;
+  border:none;
+  padding:.6rem .95rem;
+  border-radius:10px;
+  font:inherit;
+  font-weight:700;
+  font-size:.85rem;
+  cursor:pointer;
+  box-shadow:0 6px 16px rgba(201,168,106,.25), inset 0 1px 0 rgba(255,255,255,.7);
+  transition:all .2s ease;
+}
+.card button:not([class]):hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(201,168,106,.35)}
+.card button:not([class]):disabled{opacity:.5;cursor:not-allowed;transform:none}

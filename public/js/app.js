@@ -81,9 +81,9 @@
       ['akademik', '🎓 Akademik'],
       ['administrasi', '🗂️ Administrasi'],
       ['pengaduan', '📬 Layanan Pengaduan'],
-     ['ekskul', '🏅 Ekstrakurikuler'],
-['bk', '🧑‍⚕️ Bimbingan Konseling'],
-['keuangan', '💰 Keuangan / SPP'],
+      ['ekskul', '🏅 Ekstrakurikuler'],
+      ['bk', '🧑‍⚕️ Bimbingan Konseling'],
+      ['keuangan', '💰 Keuangan / SPP'],
       ['akun', '👤 Akun']
     ],
     guru: [
@@ -144,11 +144,10 @@
               <div class="field"><label>Password</label><input name="password" type="password" required></div>
               <p class="form-msg">${esc(msg)}</p>
               <button class="btn full" type="submit">Masuk</button>
-            <button type="button" class="btn ghost full"
-  data-action="forgotPw" style="margin-top:10px">
-  Lupa Password?
-</button>
-              </form>
+              <button type="button" class="btn ghost full" data-action="forgotPw" style="margin-top:10px">
+                Lupa Password?
+              </button>
+            </form>
           </div>
         </section>
       </div>`;
@@ -417,7 +416,7 @@
   }
 
   async function newsView() {
-        const list = await api('/announcements');
+    const list = await api('/announcements');
     return `<h1>Pengumuman</h1>
       <div class="card"><form class="form" data-form="post" data-url="/admin/announcements">
         <div class="field"><label>Judul</label><input name="title" required></div>
@@ -559,7 +558,7 @@
   // ---------- ADMINISTRASI ----------
   async function administrasiView() {
     const d = await api('/portal/administrasi');
-        const form = me.role === 'admin'
+    const form = me.role === 'admin'
       ? `<div class="card"><h2>Tambah Dokumen</h2><form class="form inline" data-form="post" data-url="/portal/administrasi">
           <div class="field"><label>Jenis</label><select name="type">${d.types.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
           <div class="field"><label>Judul / Nomor surat</label><input name="title" required maxlength="150"></div>
@@ -605,79 +604,75 @@
 
   // ---------- AKUN ----------
   async function akunView() {
-  const d = await api('/portal/akun');
-  const u = d.user;
+    const d = await api('/portal/akun');
+    const u = d.user;
 
-  const row = (l, v) =>
-    `<tr><td class="muted" style="width:150px">${l}</td><td><b>${esc(v || '-')}</b></td></tr>`;
+    const row = (l, v) =>
+      `<tr><td class="muted" style="width:150px">${l}</td><td><b>${esc(v || '-')}</b></td></tr>`;
 
-  const foto = u.avatar_data
-    ? `<img src="${esc(u.avatar_data)}" alt="Foto Profil"
-         style="width:130px;height:130px;object-fit:cover;border-radius:50%;border:4px solid #e2e8f0">`
-    : `<div style="width:130px;height:130px;border-radius:50%;background:#6366f1;color:white;display:grid;place-items:center;font-size:2.5rem;font-weight:bold">
-         ${esc((u.name || 'U').charAt(0).toUpperCase())}
-       </div>`;
+    const foto = u.avatar_data
+      ? `<img src="${esc(u.avatar_data)}" alt="Foto Profil"
+           style="width:130px;height:130px;object-fit:cover;border-radius:50%;border:4px solid #e2e8f0">`
+      : `<div style="width:130px;height:130px;border-radius:50%;background:#6366f1;color:white;display:grid;place-items:center;font-size:2.5rem;font-weight:bold">
+           ${esc((u.name || 'U').charAt(0).toUpperCase())}
+         </div>`;
 
-  return `<h1>Akun</h1>
-    <div class="card">
-      <h2>📸 Foto Profil</h2>
-      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-        ${foto}
-        <div>
-          <form class="form" data-form="saveFotoProfil">
-            <div class="field">
-              <label>Pilih Foto Profil</label>
-              <input type="file" name="foto"
-                accept="image/jpeg,image/png,image/webp" required>
-            </div>
-            <button class="btn" type="submit">Unggah Foto</button>
-          </form>
-          ${u.avatar_data
-            ? `<button class="btn danger" data-action="hapusFotoProfil"
-                 style="margin-top:10px">Hapus Foto</button>`
-            : ''}
-          <p class="muted small">Format JPG, PNG, WEBP. Maksimal 1 MB.</p>
+    return `<h1>Akun</h1>
+      <div class="card">
+        <h2>📸 Foto Profil</h2>
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+          ${foto}
+          <div>
+            <form class="form" data-form="saveFotoProfil">
+              <div class="field">
+                <label>Pilih Foto Profil</label>
+                <input type="file" name="foto" accept="image/jpeg,image/png,image/webp" required>
+              </div>
+              <button class="btn" type="submit">Unggah Foto</button>
+            </form>
+            ${u.avatar_data
+              ? `<button class="btn danger" data-action="hapusFotoProfil" style="margin-top:10px">Hapus Foto</button>`
+              : ''}
+            <p class="muted small">Format JPG, PNG, WEBP. Maksimal 1 MB.</p>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="grid2">
-      <div class="card">
-        <h2>Profil</h2>
-        <table><tbody>
-          ${row('Nama', u.name)}
-          ${row('Username', u.username)}
-          ${row('Peran', roleLabel(u.role))}
-          ${d.siswa ? row('NIS', d.siswa.nis) + row('Kelas', d.siswa.class_name) : ''}
-        </tbody></table>
+      <div class="grid2">
+        <div class="card">
+          <h2>Profil</h2>
+          <table><tbody>
+            ${row('Nama', u.name)}
+            ${row('Username', u.username)}
+            ${row('Peran', roleLabel(u.role))}
+            ${d.siswa ? row('NIS', d.siswa.nis) + row('Kelas', d.siswa.class_name) : ''}
+          </tbody></table>
+        </div>
+
+        <div class="card">
+          <h2>Kontak</h2>
+          <form class="form" data-form="saveAkun">
+            <div class="field">
+              <label>Email</label>
+              <input name="email" type="email" maxlength="120" value="${esc(u.email || '')}">
+            </div>
+            <div class="field">
+              <label>No. Telepon</label>
+              <input name="phone" maxlength="20" value="${esc(u.phone || '')}">
+            </div>
+            <div><button class="btn" type="submit">Simpan</button></div>
+          </form>
+        </div>
       </div>
 
       <div class="card">
-        <h2>Kontak</h2>
-        <form class="form" data-form="saveAkun">
-          <div class="field">
-            <label>Email</label>
-            <input name="email" type="email" maxlength="120"
-              value="${esc(u.email || '')}">
-          </div>
-          <div class="field">
-            <label>No. Telepon</label>
-            <input name="phone" maxlength="20"
-              value="${esc(u.phone || '')}">
-          </div>
-          <div><button class="btn" type="submit">Simpan</button></div>
-        </form>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Keamanan</h2>
-      <p class="muted small" style="margin-bottom:.8rem">
-        Ganti password secara berkala. Minimal 8 karakter.
-      </p>
-      <button class="btn ghost" data-action="pw">🔑 Ganti Password</button>
-    </div>`;
-}
+        <h2>Keamanan</h2>
+        <p class="muted small" style="margin-bottom:.8rem">
+          Ganti password secara berkala. Minimal 8 karakter.
+        </p>
+        <button class="btn ghost" data-action="pw">🔑 Ganti Password</button>
+      </div>`;
+  }
 
   /* ===================== DASHBOARD (TAHAP 3) ===================== */
   const QUICK_EXTRA = {
@@ -814,7 +809,7 @@
     const hist = d.rows.length
       ? d.rows.map((r) => `<tr><td>${fday(r.date)}</td><td>${statusPill(r.status)}</td><td>${esc(r.check_in || '-')}</td><td>${esc(r.check_out || '-')}</td><td>${esc(r.note || '')}</td></tr>`).join('')
       : '<tr><td colspan="5" class="muted">Belum ada riwayat.</td></tr>';
-          return `<div class="card"><h2>Absensi Saya - ${fday(d.date)}</h2>${info}
+    return `<div class="card"><h2>Absensi Saya - ${fday(d.date)}</h2>${info}
         <div class="actions" style="margin-top:.8rem">
           <button class="btn" data-action="staffIn" ${canIn ? '' : 'disabled'}>Absen Masuk</button>
           <button class="btn ghost" data-action="staffOut" ${canOut ? '' : 'disabled'}>Absen Pulang</button>
@@ -1179,7 +1174,7 @@
       </div>`;
   }
 
-  async function downloadXlsx(path, btn) {
+  async function downloadXlsx(path, btn, fallbackName = 'export.xlsx') {
     const old = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Menyiapkan...';
@@ -1196,7 +1191,7 @@
       const m = /filename="([^"]+)"/.exec(cd);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : 'export.xlsx';
+      a.download = m ? m[1] : fallbackName;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1284,468 +1279,443 @@
       </div>`;
     o.scrollTop = 0;
   }
-async function resetView() {
-  const r = await api('/password-reset/admin/requests');
-  const list = r.data || [];
 
-  const rows = list.length
-    ? list.map((u) => `
-      <tr>
-        <td>${esc(u.username)}</td>
-        <td>${esc(u.name)}</td>
-        <td>${esc(roleLabel(u.role))}</td>
-        <td>${esc(u.email || '-')}</td>
-        <td>${fdate(u.created_at)}</td>
-        <td>
-          <div class="actions">
-            <button class="btn sm"
-              data-action="approveReset"
-              data-id="${u.id}">
-              Setujui
-            </button>
+  async function resetView() {
+    const r = await api('/password-reset/admin/requests');
+    const list = r.data || [];
 
-            <button class="btn sm danger"
-              data-action="rejectReset"
-              data-id="${u.id}">
-              Tolak
-            </button>
-          </div>
-        </td>
-      </tr>
-    `).join('')
-    : '<tr><td colspan="6" class="muted">Belum ada permintaan reset password.</td></tr>';
+    const rows = list.length
+      ? list.map((u) => `
+        <tr>
+          <td>${esc(u.username)}</td>
+          <td>${esc(u.name)}</td>
+          <td>${esc(roleLabel(u.role))}</td>
+          <td>${esc(u.email || '-')}</td>
+          <td>${fdate(u.created_at)}</td>
+          <td>
+            <div class="actions">
+              <button class="btn sm" data-action="approveReset" data-id="${u.id}">Setujui</button>
+              <button class="btn sm danger" data-action="rejectReset" data-id="${u.id}">Tolak</button>
+            </div>
+          </td>
+        </tr>
+      `).join('')
+      : '<tr><td colspan="6" class="muted">Belum ada permintaan reset password.</td></tr>';
 
-  return `
-    <h1>Permintaan Reset Password</h1>
+    return `
+      <h1>Permintaan Reset Password</h1>
 
-    <p class="muted">
-      Periksa permintaan siswa atau guru yang lupa password.
-    </p>
+      <p class="muted">
+        Periksa permintaan siswa atau guru yang lupa password.
+      </p>
 
-    <div class="card">
-      <div class="actions" style="margin-bottom:15px">
-        <button class="btn" data-action="refreshReset">
-          ↻ Muat Ulang
-        </button>
-      </div>
-
-      <div style="overflow-x:auto">
-        <table>
-          <thead>
-            <tr>
-              <th>Username</th>
-              <th>Nama</th>
-              <th>Peran</th>
-              <th>Email</th>
-              <th>Tanggal</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-// ===============================
-// FITUR 11: EKSTRAKURIKULER
-// ===============================
-
-async function ekskulView() {
-  const data = await api('/portal/ekskul')
-  const isAdmin = me.role === 'admin';
-
-  let html = `
-    <div class="page-head">
-      <div>
-        <h1>Ekstrakurikuler</h1>
-        <p class="muted">Informasi dan kegiatan ekstrakurikuler sekolah.</p>
-      </div>
-    </div>
-  `;
-
-  if (isAdmin) {
-    html += `
       <div class="card">
-        <h3>Tambah Ekstrakurikuler</h3>
-        <form class="form" data-form="saveEkskul">
-          <div class="field">
-            <label>Nama Ekstrakurikuler</label>
-            <input name="name" placeholder="Contoh: Pramuka" required>
+        <div class="actions" style="margin-bottom:15px">
+          <button class="btn" data-action="refreshReset">↻ Muat Ulang</button>
+        </div>
+
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Nama</th>
+                <th>Peran</th>
+                <th>Email</th>
+                <th>Tanggal</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // ===============================
+  // FITUR 11: EKSTRAKURIKULER
+  // ===============================
+
+  async function ekskulView() {
+    const data = await api('/portal/ekskul');
+    const isAdmin = me.role === 'admin';
+
+    let html = `
+      <div class="page-head">
+        <div>
+          <h1>Ekstrakurikuler</h1>
+          <p class="muted">Informasi dan kegiatan ekstrakurikuler sekolah.</p>
+        </div>
+      </div>
+    `;
+
+    if (isAdmin) {
+      html += `
+        <div class="card">
+          <h3>Tambah Ekstrakurikuler</h3>
+          <form class="form" data-form="saveEkskul">
+            <div class="field">
+              <label>Nama Ekstrakurikuler</label>
+              <input name="name" placeholder="Contoh: Pramuka" required>
+            </div>
+            <div class="field">
+              <label>Deskripsi</label>
+              <textarea name="description" rows="3"></textarea>
+            </div>
+            <div class="field">
+              <label>Jadwal</label>
+              <input name="schedule" placeholder="Contoh: Jumat, 14.00 WIB">
+            </div>
+            <div class="field">
+              <label>Kuota Anggota</label>
+              <input name="quota" type="number" min="0" value="0">
+            </div>
+            <button class="btn" type="submit">+ Simpan Ekstrakurikuler</button>
+            <p class="form-msg"></p>
+          </form>
+        </div>
+      `;
+    }
+
+    html += `
+      <div class="grid">
+        ${data.length ? data.map(x => `
+          <div class="card">
+            <h3>${esc(x.name)}</h3>
+            <p>${esc(x.description || 'Tidak ada deskripsi.')}</p>
+            <p class="muted small">📅 ${esc(x.schedule || 'Jadwal belum ditentukan')}</p>
+            <p class="muted small">Kuota: ${Number(x.quota || 0) || 'Tidak dibatasi'}</p>
+            ${
+              me.role === 'siswa'
+                ? `<button class="btn sm" data-action="joinEkskul" data-id="${Number(x.id)}">Daftar</button>`
+                : ''
+            }
           </div>
+        `).join('') : '<div class="card"><p>Belum ada ekstrakurikuler.</p></div>'}
+      </div>
+    `;
+
+    return html;
+  }
+
+  // ===============================
+  // FITUR 11: BIMBINGAN KONSELING
+  // ===============================
+
+  async function bkView() {
+    const data = await api('/portal/bk');
+
+    const rows = data.map(x => `
+      <tr>
+        <td>${esc(x.student_name || x.student_id)}</td>
+        <td>${esc(x.category)}</td>
+        <td>${esc(x.notes)}</td>
+        <td>${esc(x.follow_up || '-')}</td>
+        <td>${esc(x.session_date)}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="page-head">
+        <div>
+          <h1>Bimbingan Konseling</h1>
+          <p class="muted">Pencatatan layanan bimbingan dan konseling siswa.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Tambah Catatan Konseling</h3>
+        <form class="form" data-form="saveBK">
           <div class="field">
-            <label>Deskripsi</label>
-            <textarea name="description" rows="3"></textarea>
+            <label>ID Siswa</label>
+            <input name="student_id" type="number" min="1" required>
           </div>
+
           <div class="field">
-            <label>Jadwal</label>
-            <input name="schedule" placeholder="Contoh: Jumat, 14.00 WIB">
+            <label>Kategori</label>
+            <select name="category" required>
+              <option value="">Pilih kategori</option>
+              <option value="Akademik">Akademik</option>
+              <option value="Pribadi">Pribadi</option>
+              <option value="Sosial">Sosial</option>
+              <option value="Karier">Karier</option>
+            </select>
           </div>
+
           <div class="field">
-            <label>Kuota Anggota</label>
-            <input name="quota" type="number" min="0" value="0">
+            <label>Catatan Konseling</label>
+            <textarea name="notes" rows="4" required></textarea>
           </div>
-          <button class="btn" type="submit">+ Simpan Ekstrakurikuler</button>
+
+          <div class="field">
+            <label>Tindak Lanjut</label>
+            <textarea name="follow_up" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label>Tanggal Konseling</label>
+            <input name="session_date" type="date" required>
+          </div>
+
+          <button class="btn" type="submit">Simpan Catatan</button>
           <p class="form-msg"></p>
         </form>
       </div>
-    `;
-  }
-
-  html += `
-    <div class="grid">
-      ${data.length ? data.map(x => `
-        <div class="card">
-          <h3>${esc(x.name)}</h3>
-          <p>${esc(x.description || 'Tidak ada deskripsi.')}</p>
-          <p class="muted small">📅 ${esc(x.schedule || 'Jadwal belum ditentukan')}</p>
-          <p class="muted small">Kuota: ${Number(x.quota || 0) || 'Tidak dibatasi'}</p>
-          ${
-            me.role === 'siswa'
-              ? `<button class="btn sm" data-action="joinEkskul" data-id="${Number(x.id)}">Daftar</button>`
-              : ''
-          }
-        </div>
-      `).join('') : '<div class="card"><p>Belum ada ekstrakurikuler.</p></div>'}
-    </div>
-  `;
-
-  return html;
-}
-
-
-// ===============================
-// FITUR 11: BIMBINGAN KONSELING
-// ===============================
-// ================= Bimbingan Konseling =================
-
-async function bkView() {
-  const data = await api('/portal/bk');
-
-  const rows = data.map(x => `
-    <tr>
-      <td>${esc(x.student_name || x.student_id)}</td>
-      <td>${esc(x.category)}</td>
-      <td>${esc(x.notes)}</td>
-      <td>${esc(x.follow_up || '-')}</td>
-      <td>${esc(x.session_date)}</td>
-    </tr>
-  `).join('');
-
-  return `
-    <div class="page-head">
-      <div>
-        <h1>Bimbingan Konseling</h1>
-        <p class="muted">Pencatatan layanan bimbingan dan konseling siswa.</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Tambah Catatan Konseling</h3>
-      <form class="form" data-form="saveBK">
-        <div class="field">
-          <label>ID Siswa</label>
-          <input name="student_id" type="number" min="1" required>
-        </div>
-
-        <div class="field">
-          <label>Kategori</label>
-          <select name="category" required>
-            <option value="">Pilih kategori</option>
-            <option value="Akademik">Akademik</option>
-            <option value="Pribadi">Pribadi</option>
-            <option value="Sosial">Sosial</option>
-            <option value="Karier">Karier</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Catatan Konseling</label>
-          <textarea name="notes" rows="4" required></textarea>
-        </div>
-
-        <div class="field">
-          <label>Tindak Lanjut</label>
-          <textarea name="follow_up" rows="3"></textarea>
-        </div>
-
-        <div class="field">
-          <label>Tanggal Konseling</label>
-          <input name="session_date" type="date" required>
-        </div>
-
-        <button class="btn" type="submit">Simpan Catatan</button>
-        <p class="form-msg"></p>
-      </form>
-    </div>
-
-    <div class="card">
-      <h3>Riwayat Konseling</h3>
-      <div style="overflow-x:auto">
-        <table>
-          <thead>
-            <tr>
-              <th>Nama / ID Siswa</th>
-              <th>Kategori</th>
-              <th>Catatan</th>
-              <th>Tindak Lanjut</th>
-              <th>Tanggal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows || '<tr><td colspan="5">Belum ada catatan konseling.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
-
-
-// ================= KEUANGAN / SPP =================
-
-
-async function keuanganView() {
-  try {
-    const [data, siswaData, riwayat] = await Promise.all([
-      api('/portal/keuangan'),
-      api('/portal/keuangan/siswa'),
-      api('/portal/keuangan/riwayat')
-    ]);
-
-    const siswa = Array.isArray(siswaData)
-      ? siswaData
-      : (siswaData.rows || siswaData.siswa || siswaData.students || []);
-
-    const rupiah = n =>
-      'Rp ' + Number(n || 0).toLocaleString('id-ID');
-
-    const tanggal = value => {
-      if (!value) return '-';
-      const d = new Date(value + 'T00:00:00');
-      return isNaN(d.getTime())
-        ? value
-        : d.toLocaleDateString('id-ID');
-    };
-
-    return `
-      <div class="card">
-        <h3>📊 Laporan Keuangan SPP</h3>
-        <p>Filter dan cetak laporan pembayaran siswa.</p>
-
-        <form id="filterLaporanSPP">
-          <div class="form-group">
-            <label>Dari Tanggal</label>
-            <input type="date" id="laporanMulai">
-          </div>
-
-          <div class="form-group">
-            <label>Sampai Tanggal</label>
-            <input type="date" id="laporanSampai">
-          </div>
-
-          <div class="form-group">
-            <label>Pilih Siswa</label>
-            <select id="laporanSiswa">
-              <option value="">Semua Siswa</option>
-              ${siswa.map(s => `
-                <option value="${Number(s.id)}">
-                  ${esc(s.student_name)} - ${esc(s.nis || '')}
-                </option>
-              `).join('')}
-            </select>
-          </div>
-
-          <button
-            type="button"
-            data-action="tampilkanLaporanSPP">
-            Tampilkan Laporan
-          </button>
-        </form>
-
-        <div id="hasilLaporanSPP">
-          <p>Silakan pilih filter untuk menampilkan laporan.</p>
-        </div>
-      </div>
-
-      <div class="page-head">
-        <h2>💰 Keuangan / SPP</h2>
-        <p>Kelola tagihan dan pembayaran SPP siswa.</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <h3>Total Tagihan</h3>
-          <h2>${rupiah(data.total?.total_nominal)}</h2>
-        </div>
-
-        <div class="stat-card">
-          <h3>Total Pembayaran</h3>
-          <h2>${rupiah(riwayat.total?.total_pembayaran)}</h2>
-        </div>
-
-        <div class="stat-card">
-          <h3>Transaksi</h3>
-          <h2>${riwayat.total?.total_transaksi || 0}</h2>
-        </div>
-      </div>
 
       <div class="card">
-        <h3>Buat Tagihan SPP</h3>
-
-        <form data-form="saveTagihanSPP">
-          <div class="form-msg"></div>
-
-          <div class="form-group">
-            <label>Pilih Siswa</label>
-            <select name="student_id" required>
-              <option value="">-- Pilih Siswa --</option>
-              ${siswa.map(s => `
-                <option value="${Number(s.id)}">
-                  ${esc(s.student_name)} - ${esc(s.nis || '')}
-                  (${esc(s.class_name || '-')})
-                </option>
-              `).join('')}
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Nama Tagihan</label>
-            <input name="title" required>
-          </div>
-
-          <div class="form-group">
-            <label>Periode</label>
-            <input
-              name="period"
-              placeholder="Contoh: November 2026"
-              required>
-          </div>
-
-          <div class="form-group">
-            <label>Nominal</label>
-            <input name="amount" type="number" min="1" required>
-          </div>
-
-          <div class="form-group">
-            <label>Jatuh Tempo</label>
-            <input name="due_date" type="date">
-          </div>
-
-          <button type="submit">Simpan Tagihan</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h3>Daftar Tagihan Siswa</h3>
-
-        <div class="table-wrap">
+        <h3>Riwayat Konseling</h3>
+        <div style="overflow-x:auto">
           <table>
             <thead>
               <tr>
-                <th>Siswa</th>
-                <th>Tagihan</th>
-                <th>Nominal</th>
-                <th>Dibayar</th>
-                <th>Sisa</th>
-                <th>Status</th>
-                <th>Aksi</th>
+                <th>Nama / ID Siswa</th>
+                <th>Kategori</th>
+                <th>Catatan</th>
+                <th>Tindak Lanjut</th>
+                <th>Tanggal</th>
               </tr>
             </thead>
-
             <tbody>
-              ${(data.rows || []).map(p => {
-                const sisa = Number(p.amount || 0) -
-                  Number(p.amount_paid || 0);
+              ${rows || '<tr><td colspan="5">Belum ada catatan konseling.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
 
-                return `
+  // ================= KEUANGAN / SPP =================
+
+  async function keuanganView() {
+    try {
+      const [data, siswaData, riwayat] = await Promise.all([
+        api('/portal/keuangan'),
+        api('/portal/keuangan/siswa'),
+        api('/portal/keuangan/riwayat')
+      ]);
+
+      const siswa = Array.isArray(siswaData)
+        ? siswaData
+        : (siswaData.rows || siswaData.siswa || siswaData.students || []);
+
+      const rupiah = n =>
+        'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+      const tanggal = value => {
+        if (!value) return '-';
+        const d = new Date(value + 'T00:00:00');
+        return isNaN(d.getTime())
+          ? value
+          : d.toLocaleDateString('id-ID');
+      };
+
+      return `
+        <div class="card">
+          <h3>📊 Laporan Keuangan SPP</h3>
+          <p>Filter dan cetak laporan pembayaran siswa.</p>
+
+          <form id="filterLaporanSPP">
+            <div class="form-group">
+              <label>Dari Tanggal</label>
+              <input type="date" id="laporanMulai">
+            </div>
+
+            <div class="form-group">
+              <label>Sampai Tanggal</label>
+              <input type="date" id="laporanSampai">
+            </div>
+
+            <div class="form-group">
+              <label>Pilih Siswa</label>
+              <select id="laporanSiswa">
+                <option value="">Semua Siswa</option>
+                ${siswa.map(s => `
+                  <option value="${Number(s.id)}">
+                    ${esc(s.student_name)} - ${esc(s.nis || '')}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <button type="button" data-action="tampilkanLaporanSPP">
+              Tampilkan Laporan
+            </button>
+          </form>
+
+          <div id="hasilLaporanSPP">
+            <p>Silakan pilih filter untuk menampilkan laporan.</p>
+          </div>
+        </div>
+
+        <div class="page-head">
+          <h2>💰 Keuangan / SPP</h2>
+          <p>Kelola tagihan dan pembayaran SPP siswa.</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <h3>Total Tagihan</h3>
+            <h2>${rupiah(data.total?.total_nominal)}</h2>
+          </div>
+
+          <div class="stat-card">
+            <h3>Total Pembayaran</h3>
+            <h2>${rupiah(riwayat.total?.total_pembayaran)}</h2>
+          </div>
+
+          <div class="stat-card">
+            <h3>Transaksi</h3>
+            <h2>${riwayat.total?.total_transaksi || 0}</h2>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Buat Tagihan SPP</h3>
+
+          <form data-form="saveTagihanSPP">
+            <div class="form-msg"></div>
+
+            <div class="form-group">
+              <label>Pilih Siswa</label>
+              <select name="student_id" required>
+                <option value="">-- Pilih Siswa --</option>
+                ${siswa.map(s => `
+                  <option value="${Number(s.id)}">
+                    ${esc(s.student_name)} - ${esc(s.nis || '')}
+                    (${esc(s.class_name || '-')})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Nama Tagihan</label>
+              <input name="title" required>
+            </div>
+
+            <div class="form-group">
+              <label>Periode</label>
+              <input name="period" placeholder="Contoh: November 2026" required>
+            </div>
+
+            <div class="form-group">
+              <label>Nominal</label>
+              <input name="amount" type="number" min="1" required>
+            </div>
+
+            <div class="form-group">
+              <label>Jatuh Tempo</label>
+              <input name="due_date" type="date">
+            </div>
+
+            <button type="submit">Simpan Tagihan</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Daftar Tagihan Siswa</h3>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Siswa</th>
+                  <th>Tagihan</th>
+                  <th>Nominal</th>
+                  <th>Dibayar</th>
+                  <th>Sisa</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${(data.rows || []).map(p => {
+                  const sisa = Number(p.amount || 0) - Number(p.amount_paid || 0);
+
+                  return `
+                    <tr>
+                      <td>${esc(p.student_name || '-')}</td>
+                      <td>${esc(p.title)} - ${esc(p.period)}</td>
+                      <td>${rupiah(p.amount)}</td>
+                      <td>${rupiah(p.amount_paid)}</td>
+                      <td>${rupiah(sisa)}</td>
+                      <td>${esc(p.status || '-')}</td>
+                      <td>
+                        ${sisa > 0 ? `
+                          <button type="button" data-action="bayarSPP" data-id="${Number(p.id)}">
+                            Catat Bayar
+                          </button>
+                        ` : 'Selesai'}
+                      </td>
+                    </tr>
+                  `;
+                }).join('') || `
                   <tr>
+                    <td colspan="7">Belum ada tagihan.</td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>📋 Riwayat Pembayaran SPP</h3>
+          <p>Daftar seluruh transaksi pembayaran siswa.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Siswa</th>
+                  <th>Kelas</th>
+                  <th>Tagihan</th>
+                  <th>Nominal Bayar</th>
+                  <th>Tanggal</th>
+                  <th>Metode</th>
+                  <th>Catatan</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${(riwayat.rows || []).map((p, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
                     <td>${esc(p.student_name || '-')}</td>
-                    <td>${esc(p.title)} - ${esc(p.period)}</td>
+                    <td>${esc(p.class_name || '-')}</td>
+                    <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
                     <td>${rupiah(p.amount)}</td>
-                    <td>${rupiah(p.amount_paid)}</td>
-                    <td>${rupiah(sisa)}</td>
-                    <td>${esc(p.status || '-')}</td>
+                    <td>${tanggal(p.payment_date)}</td>
+                    <td>${esc(p.method || 'Tunai')}</td>
+                    <td>${esc(p.note || '-')}</td>
                     <td>
-                      ${sisa > 0 ? `
-                        <button
-                          type="button"
-                          data-action="bayarSPP"
-                          data-id="${Number(p.id)}">
-                          Catat Bayar
-                        </button>
-                      ` : 'Selesai'}
+                      <button type="button" data-action="cetakBuktiSPP" data-id="${Number(p.id)}">
+                        🖨️ Cetak
+                      </button>
                     </td>
                   </tr>
-                `;
-              }).join('') || `
-                <tr>
-                  <td colspan="7">Belum ada tagihan.</td>
-                </tr>
-              `}
-            </tbody>
-          </table>
+                `).join('') || `
+                  <tr>
+                    <td colspan="9">Belum ada riwayat pembayaran.</td>
+                  </tr>
+                `}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>📋 Riwayat Pembayaran SPP</h3>
-        <p>Daftar seluruh transaksi pembayaran siswa.</p>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Siswa</th>
-                <th>Kelas</th>
-                <th>Tagihan</th>
-                <th>Nominal Bayar</th>
-                <th>Tanggal</th>
-                <th>Metode</th>
-                <th>Catatan</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              ${(riwayat.rows || []).map((p, i) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td>${esc(p.student_name || '-')}</td>
-                  <td>${esc(p.class_name || '-')}</td>
-                  <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
-                  <td>${rupiah(p.amount)}</td>
-                  <td>${tanggal(p.payment_date)}</td>
-                  <td>${esc(p.method || 'Tunai')}</td>
-                  <td>${esc(p.note || '-')}</td>
-                  <td>
-                    <button
-                      type="button"
-                      data-action="cetakBuktiSPP"
-                      data-id="${Number(p.id)}">
-                      🖨️ Cetak
-                    </button>
-                  </td>
-                </tr>
-              `).join('') || `
-                <tr>
-                  <td colspan="9">Belum ada riwayat pembayaran.</td>
-                </tr>
-              `}
-            </tbody>
-          </table>
+      `;
+    } catch (e) {
+      return `
+        <div class="card">
+          Gagal memuat keuangan: ${esc(e.message)}
         </div>
-      </div>
-    `;
-  } catch (e) {
-    return `
-      <div class="card">
-        Gagal memuat keuangan: ${esc(e.message)}
-      </div>
-    `;
+      `;
+    }
   }
-}
 
   // ================= KEUANGAN SISWA =================
 
@@ -1842,6 +1812,7 @@ async function keuanganView() {
       dash, report: reportView, lms: lmsView,
       absen: absenSiswa, akademik: akademikView,
       pengaduan: pengaduanView, akun: akunView,
+      ekskul: ekskulView,
       keuangan: keuanganSiswaView
     },
 
@@ -1850,7 +1821,8 @@ async function keuanganView() {
       monitor: monitorView, detail: detailView,
       absen: absenPantau, akademik: akademikView,
       administrasi: administrasiView,
-      pengaduan: pengaduanView, akun: akunView
+      pengaduan: pengaduanView, bk: bkView,
+      akun: akunView
     }
   };
 
@@ -1992,7 +1964,7 @@ async function keuanganView() {
       if (msg) msg.textContent = '';
 
       try {
-        await api('/ekskul', 'POST', {
+        await api('/portal/ekskul', 'POST', {
           name: data.name,
           description: data.description,
           schedule: data.schedule,
@@ -2051,7 +2023,7 @@ async function keuanganView() {
       if (msg) msg.textContent = '';
 
       try {
-        await api('/bk', 'POST', {
+        await api('/portal/bk', 'POST', {
           student_id: Number(data.student_id),
           category: data.category,
           notes: data.notes,
@@ -2239,23 +2211,291 @@ async function keuanganView() {
   };
 
   // ================= ACTION HANDLERS =================
+  // Catatan: endpoint bertanda "TEBAKAN" disusun dari pola penamaan di file ini.
+  // Kalau ada yang error 404, cocokkan dengan route di server.
 
   const ACTIONS = {
 
-async logout() {
-  if (!confirm('Yakin ingin keluar dari akun?')) return;
+    // ---------- Tampilan umum ----------
 
-  try {
-    await api('/logout', 'POST', {});
+    toggleSide() {
+      const side = document.getElementById('side');
+      if (side) side.classList.toggle('open');
+    },
 
-    me = null;
-    location.hash = '';
-    renderLogin();
+    bell() {
+      return openBell();
+    },
 
-  } catch (e) {
-    toast('Gagal logout: ' + e.message, false);
-  }
-},
+    closeModal() {
+      closeModal();
+    },
+
+    closeImport() {
+      closeModal();
+      route();
+    },
+
+    gsClose() {
+      gsHide();
+      const i = document.getElementById('gsInput');
+      if (i) i.value = '';
+    },
+
+    async logout() {
+      if (!confirm('Yakin ingin keluar dari akun?')) return;
+
+      try {
+        await api('/logout', 'POST', {});
+
+        me = null;
+        location.hash = '';
+        renderLogin();
+
+      } catch (e) {
+        toast('Gagal logout: ' + e.message, false);
+      }
+    },
+
+    pw() {
+      openModal(`
+        <h2>🔑 Ganti Password</h2>
+        <form class="form" data-form="changePw" style="margin-top:1rem">
+          <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
+          <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
+          <p class="form-msg"></p>
+          <div class="actions">
+            <button class="btn" type="submit">Simpan</button>
+            <button class="btn ghost" type="button" data-action="closeModal">Batal</button>
+          </div>
+        </form>
+      `);
+    },
+
+    forgotPw() {
+      openModal(`
+        <h2>Lupa Password</h2>
+        <p class="muted small">Kirim permintaan reset ke admin sekolah.</p>
+        <form class="form" data-form="forgotPw" style="margin-top:1rem">
+          <div class="field"><label>Username</label><input name="username" required></div>
+          <div class="field"><label>Email (opsional)</label><input name="email" type="email"></div>
+          <p class="form-msg"></p>
+          <div class="actions">
+            <button class="btn" type="submit">Kirim Permintaan</button>
+            <button class="btn ghost" type="button" data-action="closeModal">Batal</button>
+          </div>
+        </form>
+      `);
+    },
+
+    // ---------- Hapus generik ----------
+
+    async del(el) {
+      if (!confirm('Yakin ingin menghapus data ini?')) return;
+
+      await api(el.dataset.url, 'DELETE');
+      toast('Data dihapus');
+      route();
+    },
+
+    // ---------- Pengguna ----------
+
+    async resetPw(el) {
+      const pw = prompt('Masukkan password baru (minimal 8 karakter):');
+      if (pw === null) return;
+
+      if (pw.length < 8) {
+        throw new Error('Password minimal 8 karakter.');
+      }
+
+      // TEBAKAN: PUT /admin/users/:id/password
+      await api(`/admin/users/${el.dataset.id}/password`, 'PUT', { password: pw });
+      toast('Password berhasil direset');
+    },
+
+    async toggleActive(el) {
+      // TEBAKAN: PUT /admin/users/:id/active
+      await api(`/admin/users/${el.dataset.id}/active`, 'PUT', {
+        active: Number(el.dataset.active)
+      });
+      toast('Status pengguna diperbarui');
+      route();
+    },
+
+    async activatePeriod(el) {
+      // TEBAKAN: PUT /admin/periods/:id/activate
+      await api(`/admin/periods/${el.dataset.id}/activate`, 'PUT', {});
+      toast('Periode diaktifkan');
+      route();
+    },
+
+    toggleAllSiswa(el) {
+      document.querySelectorAll('input.pick-siswa').forEach((c) => {
+        c.checked = el.checked;
+      });
+    },
+
+    // ---------- E-Rapor, export, backup ----------
+
+    async bukaRapor(el) {
+      await showRapor(el.dataset.url);
+    },
+
+    cetakRapor() {
+      window.print();
+    },
+
+    tutupRapor() {
+      closeRapor();
+    },
+
+    async exportXlsx(el) {
+      const kelas = document.getElementById('expKelas')?.value || '';
+      const semester = document.getElementById('expSemester')?.value || '';
+
+      const params = new URLSearchParams();
+      if (kelas) params.set('class_id', kelas);
+      if (semester) params.set('semester', semester);
+
+      const qs = params.toString();
+      const type = el.dataset.type === 'absensi' ? 'absensi' : 'nilai';
+
+      // TEBAKAN: GET /admin/export/nilai | /admin/export/absensi
+      await downloadXlsx(
+        `/admin/export/${type}${qs ? '?' + qs : ''}`,
+        el,
+        `export-${type}.xlsx`
+      );
+    },
+
+    async backupDb(el) {
+      // TEBAKAN: GET /admin/backup
+      await downloadXlsx('/admin/backup', el, 'backup-siakad.json');
+    },
+
+    // ---------- Absensi ----------
+
+    async staffIn() {
+      // TEBAKAN: POST /absensi/staf/masuk
+      await api('/absensi/staf/masuk', 'POST', {});
+      toast('Absen masuk tercatat');
+      route();
+    },
+
+    async staffOut() {
+      // TEBAKAN: POST /absensi/staf/pulang
+      await api('/absensi/staf/pulang', 'POST', {});
+      toast('Absen pulang tercatat');
+      route();
+    },
+
+    allHadir() {
+      document.querySelectorAll('select.abs-status').forEach((s) => {
+        s.value = 'hadir';
+      });
+    },
+
+    async tutupSesi(el) {
+      // TEBAKAN: POST /absensi/guru/sesi/tutup
+      await api('/absensi/guru/sesi/tutup', 'POST', {
+        session_id: Number(el.dataset.id)
+      });
+      toast('Sesi absensi ditutup');
+      route();
+    },
+
+    async absenMandiri(el) {
+      // TEBAKAN: POST /absensi/siswa/mandiri
+      await api('/absensi/siswa/mandiri', 'POST', {
+        session_id: Number(el.dataset.id)
+      });
+      toast('Absensi berhasil dicatat');
+      route();
+    },
+
+    refreshAbsen() {
+      route();
+    },
+
+    // ---------- Pengaduan ----------
+
+    openRespond(el) {
+      const c = complaintsCache.find((x) => String(x.id) === String(el.dataset.id));
+      if (!c) throw new Error('Data pengaduan tidak ditemukan.');
+
+      openModal(`
+        <h2>${esc(c.subject)}</h2>
+        <p class="muted small">${esc(c.user_name)} &bull; ${esc(roleLabel(c.user_role))} &bull; ${esc(c.category)} &bull; ${fdate(c.created_at)}</p>
+        <p style="white-space:pre-wrap;margin:.8rem 0">${esc(c.body)}</p>
+        <form class="form" data-form="respondPengaduan" data-id="${c.id}">
+          <div class="field"><label>Status</label>
+            <select name="status">
+              ${['baru', 'diproses', 'selesai', 'ditolak'].map((s) => `<option value="${s}" ${c.status === s ? 'selected' : ''}>${esc(CS_LABEL[s])}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Tanggapan</label>
+            <textarea name="response" maxlength="2000">${esc(c.response || '')}</textarea>
+          </div>
+          <div class="actions">
+            <button class="btn" type="submit">Simpan Tanggapan</button>
+            <button class="btn ghost" type="button" data-action="closeModal">Tutup</button>
+          </div>
+        </form>
+      `);
+    },
+
+    // ---------- Reset password (admin) ----------
+
+    async approveReset(el) {
+      if (!confirm('Setujui permintaan reset password ini?')) return;
+
+      // TEBAKAN: POST /password-reset/admin/approve/:id
+      const r = await api(`/password-reset/admin/approve/${el.dataset.id}`, 'POST', {});
+      const temp = r && (r.temp_password || r.password);
+
+      if (temp) {
+        alert('Password sementara: ' + temp + '\n\nSampaikan ke pengguna yang bersangkutan.');
+      } else {
+        toast('Permintaan disetujui');
+      }
+
+      route();
+    },
+
+    async rejectReset(el) {
+      if (!confirm('Tolak permintaan reset password ini?')) return;
+
+      // TEBAKAN: POST /password-reset/admin/reject/:id
+      await api(`/password-reset/admin/reject/${el.dataset.id}`, 'POST', {});
+      toast('Permintaan ditolak');
+      route();
+    },
+
+    refreshReset() {
+      route();
+    },
+
+    // ---------- Foto profil ----------
+
+    async hapusFotoProfil() {
+      if (!confirm('Hapus foto profil?')) return;
+
+      // TEBAKAN: DELETE /portal/akun/foto
+      await api('/portal/akun/foto', 'DELETE');
+      toast('Foto profil dihapus');
+      route();
+    },
+
+    // ---------- Ekstrakurikuler ----------
+
+    async joinEkskul(el) {
+      // TEBAKAN: POST /portal/ekskul/:id/join
+      await api(`/portal/ekskul/${el.dataset.id}/join`, 'POST', {});
+      toast('Pendaftaran ekstrakurikuler berhasil');
+      route();
+    },
+
+    // ---------- Keuangan / SPP ----------
 
     async bayarSPP(el) {
       const id = Number(el.dataset.id);
@@ -2690,6 +2930,14 @@ async logout() {
     const el = e.target.closest('[data-change]');
     if (el) {
       CHANGES[el.dataset.change](el);
+    }
+  });
+
+  // Tutup sidebar (tampilan mobile) setelah menu diklik
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#side nav a')) {
+      const side = document.getElementById('side');
+      if (side) side.classList.remove('open');
     }
   });
 
