@@ -28,6 +28,8 @@
   --champagne:#F7E8B0;
   --champagne-2:#E8E0C8;
   --ivory:#FFFEFB;
+  /* Skala tampilan setelah login: .8 = setara zoom browser 80% */
+  --ui-zoom:.8;
 }
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -247,7 +249,7 @@ body{
 .btn.full{width:100%;height:48px;font-size:.95rem}
 
 /* ==================== DASHBOARD : GOLD LUXURY ==================== */
-.shell{display:flex;min-height:100vh}
+.shell{display:flex;zoom:var(--ui-zoom);min-height:calc(100vh / var(--ui-zoom))}
 .side{
   width:290px;
   background:linear-gradient(180deg, #fffefb 0%, #fdf8ec 100%);
@@ -257,7 +259,7 @@ body{
   flex-direction:column;
   position:sticky;
   top:0;
-  height:100vh;
+  height:calc(100vh / var(--ui-zoom));
   box-shadow:4px 0 30px rgba(122,90,18,.06);
   z-index:10;
 }
@@ -431,6 +433,7 @@ tr:last-child td{border-bottom:none}
   border-radius:12px;
   box-shadow:0 20px 40px rgba(0,0,0,.25);
   z-index:9999;
+  zoom:var(--ui-zoom);
   font-weight:600;
   font-size:.88rem;
   animation:slideIn .3s ease;
@@ -452,9 +455,10 @@ tr:last-child td{border-bottom:none}
   border:1px solid var(--line);
   border-radius:20px;
   padding:1.7rem;
+  zoom:var(--ui-zoom);
   min-width:380px;
-  max-width:92vw;
-  max-height:92vh;
+  max-width:calc(92vw / var(--ui-zoom));
+  max-height:calc(92vh / var(--ui-zoom));
   overflow:auto;
   box-shadow:0 30px 80px rgba(0,0,0,.25);
 }
@@ -472,6 +476,7 @@ tr:last-child td{border-bottom:none}
 
 /* RESPONSIVE */
 @media(max-width:900px){
+  :root{--ui-zoom:1}
   .login-wrap{grid-template-columns:1fr}
   .login-hero{display:none}
   .login-box{box-shadow:none;border:none;padding:1.8rem 1.2rem}
