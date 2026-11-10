@@ -779,4 +779,248 @@ router.delete('/akun/foto', async (req, res) => {
     fail(res, e, 'Gagal menghapus foto profil');
   }
 });
+
+// ================= BUKTI PEMBAYARAN SPP =================
+
+// Siswa mengunggah bukti pembayaran
+router.post('/keuangan/saya/:id/bukti', role('siswa'), async (req, res) => {
+  try {
+    const invoiceId = Number(req.params.id);
+    const amount = Math.floor(Number(req.body.amount));
+    const proof = req.body.proof;
+    const note = clip(req.body.note, 300);
+
+    if (!Number.isInteger(invoiceId) || invoiceId <= 0) {
+      return bad(res, 'Tagihan tidak valid');
+    }
+
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      return bad(res, 'Nominal pembayaran tidak valid');
+    }
+
+   if (
+  !validImageDataUrl(proof) ||
+  proof.length > 6 * 1024 * 1024
+) {
+  return bad(res, 'Bukti harus berupa gambar JPG, PNG, atau WEBP maksimal 5 MB');
+}
+    const student = await db.prepare(
+      'SELECT id FROM students WHERE user_id = ?'
+    ).get(req.user.id);
+
+    if (!student) return bad(res, 'Data siswa tidak ditemukan');
+
+    const invoice = await db.prepare(`
+      SELECT i.*,
+        COALESCE((
+          SELECT SUM(p.amount)
+          FROM spp_payments p
+          WHERE p.invoice_id = i.id
+        ), 0) AS amount_paid
+      FROM spp_invoices i
+      WHERE i.id = ? AND i.student_id = ?
+    `).get(invoiceId, student.id);
+
+    if (!invoice) return bad(res, 'Tagihan tidak ditemukan');
+
+    const remaining = Number(invoice.amount) - Number(invoice.amount_paid);
+
+    if (remaining <= 0) return bad(res, 'Tagihan sudah lunas');
+    if (amount > remaining) {
+      return bad(res, 'Nominal melebihi sisa tagihan');
+    }
+
+    const pending = await db.prepare(`
+      SELECT id FROM spp_payment_proofs
+      WHERE invoice_id = ? AND status = 'menunggu'
+    `).get(invoiceId);
+
+    if (pending) {
+      return bad(res, 'Masih ada bukti pembayaran yang menunggu verifikasi');
+    }
+
+    await db.prepare(`
+      INSERT INTO spp_payment_proofs
+      (invoice_id, student_id, amount, proof_data, note)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(invoiceId, student.id, amount, proof, note || null);
+
+    res.json({ ok: true, message: 'Bukti pembayaran berhasil dikirim' });
+  } catch (e) {
+    fail(res, e, 'Gagal mengunggah bukti pembayaran');
+  }
+});
+
+
+// Admin dan kepala sekolah melihat bukti pembayaran
+router.get('/keuangan/bukti', role('admin', 'kepsek'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT
+        p.id,
+        p.invoice_id,
+        p.student_id,
+        p.amount,
+        p.proof_data,
+        p.note,
+        p.status,
+        p.created_at,
+        u.name AS student_name,
+        s.nis,
+        i.title,
+        i.period
+      FROM spp_payment_proofs p
+      JOIN students s ON s.id = p.student_id
+      JOIN users u ON u.id = s.user_id
+      JOIN spp_invoices i ON i.id = p.invoice_id
+      ORDER BY
+        CASE WHEN p.status = 'menunggu' THEN 0 ELSE 1 END,
+        p.id DESC
+    `).all();
+
+    res.json({ rows });
+  } catch (e) {
+    fail(res, e, 'Gagal memuat bukti pembayaran');
+  }
+});
+
+
+
+
+// Admin memverifikasi atau menolak bukti pembayaran
+router.put('/keuangan/bukti/:id/verifikasi', role('admin'), async (req, res) => {
+  try {
+    const proofId = Number(req.params.id);
+    const status = clip(req.body.status, 20);
+    const method = clip(req.body.method, 30) || 'Transfer';
+
+    if (!Number.isInteger(proofId) || proofId <= 0) {
+      return bad(res, 'Bukti pembayaran tidak valid');
+    }
+
+    if (!['diterima', 'ditolak'].includes(status)) {
+      return bad(res, 'Status verifikasi tidak valid');
+    }
+
+    const proof = await db.prepare(`
+      SELECT * FROM spp_payment_proofs WHERE id = ?
+    `).get(proofId);
+
+    if (!proof) return bad(res, 'Bukti pembayaran tidak ditemukan');
+
+    if (proof.status !== 'menunggu') {
+      return bad(res, 'Bukti pembayaran sudah diverifikasi');
+    }
+
+    if (status === 'ditolak') {
+      const result = await db.batch([
+        [
+          `UPDATE spp_payment_proofs
+           SET status = 'ditolak',
+               reviewed_by = ?,
+               reviewed_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND status = 'menunggu'`,
+          [req.user.id, proofId]
+        ]
+      ]);
+
+      if (!result[0].changes) {
+        return bad(res, 'Bukti pembayaran sudah diproses');
+      }
+
+      return res.json({
+        ok: true,
+        message: 'Bukti pembayaran berhasil ditolak'
+      });
+    }
+
+    // Verifikasi dan pencatatan pembayaran dalam satu batch atomik
+    const result = await db.batch([
+      [
+        `UPDATE spp_payment_proofs
+         SET status = 'diproses',
+             reviewed_by = ?,
+             reviewed_at = CURRENT_TIMESTAMP
+         WHERE id = ?
+           AND status = 'menunggu'
+           AND EXISTS (
+             SELECT 1
+             FROM spp_invoices i
+             WHERE i.id = spp_payment_proofs.invoice_id
+               AND i.student_id = spp_payment_proofs.student_id
+               AND spp_payment_proofs.amount <= (
+                 i.amount - COALESCE((
+                   SELECT SUM(p.amount)
+                   FROM spp_payments p
+                   WHERE p.invoice_id = i.id
+                 ), 0)
+               )
+           )`,
+        [req.user.id, proofId]
+      ],
+      [
+        `INSERT INTO spp_payments
+         (invoice_id, amount, payment_date, method, note, recorded_by, proof_id)
+         SELECT invoice_id, amount, ?, ?,
+                COALESCE(note, 'Pembayaran diverifikasi dari bukti transfer'),
+                ?, id
+         FROM spp_payment_proofs
+         WHERE id = ?
+           AND status = 'diproses'
+           AND reviewed_by = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM spp_payments
+             WHERE proof_id = spp_payment_proofs.id
+           )`,
+        [todayStr(), method, req.user.id, proofId, req.user.id]
+      ],
+      [
+        `UPDATE spp_payment_proofs
+         SET status = 'diterima'
+         WHERE id = ?
+           AND status = 'diproses'
+           AND reviewed_by = ?
+           AND EXISTS (
+             SELECT 1 FROM spp_payments
+             WHERE proof_id = spp_payment_proofs.id
+           )`,
+        [proofId, req.user.id]
+      ],
+      [
+        `UPDATE spp_invoices
+         SET status = CASE
+           WHEN (
+             SELECT COALESCE(SUM(amount), 0)
+             FROM spp_payments
+             WHERE invoice_id = spp_invoices.id
+           ) >= amount THEN 'lunas'
+           ELSE 'belum_lunas'
+         END
+         WHERE id = ?
+           AND EXISTS (
+             SELECT 1 FROM spp_payment_proofs
+             WHERE id = ?
+               AND status = 'diterima'
+           )`,
+        [proof.invoice_id, proofId]
+      ]
+    ]);
+
+    if (!result[0].changes) {
+      return bad(res, 'Bukti sudah diproses atau nominal melebihi sisa tagihan');
+    }
+
+    if (!result[2].changes) {
+      return bad(res, 'Pembayaran gagal dicatat. Silakan periksa status bukti.');
+    }
+
+    res.json({
+      ok: true,
+      message: 'Pembayaran berhasil diverifikasi'
+    });
+
+  } catch (e) {
+    fail(res, e, 'Gagal memverifikasi pembayaran');
+  }
+});
 module.exports = router;

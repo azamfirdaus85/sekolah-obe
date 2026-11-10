@@ -1338,7 +1338,8 @@
   // ===============================
 
   async function ekskulView() {
-    const data = await api('/portal/ekskul');
+    const raw = await api('/portal/ekskul');
+const data = Array.isArray(raw) ? raw : (raw.rows || raw.data || raw.items || []);
     const isAdmin = me.role === 'admin';
 
     let html = `
@@ -1404,7 +1405,8 @@
   // ===============================
 
   async function bkView() {
-    const data = await api('/portal/bk');
+    const raw = await api('/portal/bk');
+const data = Array.isArray(raw) ? raw : (raw.rows || raw.data || raw.items || []);
 
     const rows = data.map(x => `
       <tr>
@@ -1487,17 +1489,22 @@
 
   // ================= KEUANGAN / SPP =================
 
-  async function keuanganView() {
-    try {
-      const [data, siswaData, riwayat] = await Promise.all([
-        api('/portal/keuangan'),
-        api('/portal/keuangan/siswa'),
-        api('/portal/keuangan/riwayat')
-      ]);
+async function keuanganView() {
+  try {
+    const [data, siswaData, riwayat, buktiData] = await Promise.all([
+      api('/portal/keuangan'),
+      api('/portal/keuangan/siswa'),
+      api('/portal/keuangan/riwayat'),
+      api('/portal/keuangan/bukti')
+    ]);
 
-      const siswa = Array.isArray(siswaData)
-        ? siswaData
-        : (siswaData.rows || siswaData.siswa || siswaData.students || []);
+    const buktiRows = Array.isArray(buktiData)
+      ? buktiData
+      : (buktiData?.rows || []);
+
+    const siswa = Array.isArray(siswaData)
+      ? siswaData
+      : (siswaData.rows || siswaData.siswa || siswaData.students || []);
 
       const rupiah = n =>
         'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -1648,6 +1655,9 @@
                             Catat Bayar
                           </button>
                         ` : 'Selesai'}
+                         <button type="button" data-action="cetakInvoiceSPP" data-id="${Number(p.id)}">
+    🖨️ Cetak Invoice
+  </button>
                       </td>
                     </tr>
                   `;
@@ -1661,52 +1671,118 @@
           </div>
         </div>
 
-        <div class="card">
-          <h3>📋 Riwayat Pembayaran SPP</h3>
-          <p>Daftar seluruh transaksi pembayaran siswa.</p>
+<div class="card">
+  <h3>📥 Verifikasi Bukti Pembayaran SPP</h3>
+  <p>Periksa bukti pembayaran yang dikirim siswa.</p>
 
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Siswa</th>
-                  <th>Kelas</th>
-                  <th>Tagihan</th>
-                  <th>Nominal Bayar</th>
-                  <th>Tanggal</th>
-                  <th>Metode</th>
-                  <th>Catatan</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Siswa</th>
+          <th>Tagihan</th>
+          <th>Nominal</th>
+          <th>Bukti</th>
+          <th>Catatan</th>
+          <th>Status</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
 
-              <tbody>
-                ${(riwayat.rows || []).map((p, i) => `
-                  <tr>
-                    <td>${i + 1}</td>
-                    <td>${esc(p.student_name || '-')}</td>
-                    <td>${esc(p.class_name || '-')}</td>
-                    <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
-                    <td>${rupiah(p.amount)}</td>
-                    <td>${tanggal(p.payment_date)}</td>
-                    <td>${esc(p.method || 'Tunai')}</td>
-                    <td>${esc(p.note || '-')}</td>
-                    <td>
-                      <button type="button" data-action="cetakBuktiSPP" data-id="${Number(p.id)}">
-                        🖨️ Cetak
-                      </button>
-                    </td>
-                  </tr>
-                `).join('') || `
-                  <tr>
-                    <td colspan="9">Belum ada riwayat pembayaran.</td>
-                  </tr>
-                `}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <tbody>
+        ${buktiRows.map(b => `
+          <tr>
+            <td>${esc(b.student_name || '-')}</td>
+            <td>${esc(b.title || '-')} - ${esc(b.period || '-')}</td>
+            <td>${rupiah(b.amount)}</td>
+            <td>
+              ${b.proof_data ? `
+                <img
+                  src="${esc(b.proof_data)}"
+                  alt="Bukti Pembayaran"
+       onclick="const w=window.open('about:blank','_blank');if(w){w.document.write('<img src='+JSON.stringify(this.src)+' style=max-width:100%;height:auto>');w.document.close()}"
+                  style="width:100px;height:100px;object-fit:contain;border:1px solid #ddd;border-radius:8px;cursor:pointer"
+                >
+              ` : 'Foto tidak tersedia'}
+            </td>
+            <td>${esc(b.note || '-')}</td>
+            <td>${esc(b.status || '-')}</td>
+            <td>
+              ${b.status === 'menunggu' ? `
+                <button type="button"
+                  data-action="verifikasiBuktiSPP"
+                  data-id="${Number(b.id)}"
+                  data-status="diterima">
+                  ✅ Terima
+                </button>
+
+                <button type="button"
+                  data-action="verifikasiBuktiSPP"
+                  data-id="${Number(b.id)}"
+                  data-status="ditolak">
+                  ❌ Tolak
+                </button>
+              ` : '-'}
+            </td>
+          </tr>
+        `).join('') || `
+          <tr>
+            <td colspan="7">Belum ada bukti pembayaran.</td>
+          </tr>
+        `}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>📜 Riwayat Pembayaran SPP</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>Siswa</th>
+          <th>Kelas</th>
+          <th>Tagihan</th>
+          <th>Nominal</th>
+          <th>Tanggal</th>
+          <th>Metode</th>
+          <th>Catatan</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        ${(riwayat.rows || []).map((p, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${esc(p.student_name || '-')}</td>
+            <td>${esc(p.class_name || '-')}</td>
+            <td>${esc(p.title || '-')} - ${esc(p.period || '-')}</td>
+            <td>${rupiah(p.amount)}</td>
+            <td>${tanggal(p.payment_date)}</td>
+            <td>${esc(p.method || 'Tunai')}</td>
+            <td>${esc(p.note || '-')}</td>
+            <td>
+              <button type="button"
+                data-action="cetakBuktiSPP"
+                data-id="${Number(p.id)}">
+                🖨️ Cetak
+              </button>
+            </td>
+          </tr>
+        `).join('') || `
+          <tr>
+            <td colspan="9">Belum ada riwayat pembayaran.</td>
+          </tr>
+        `}
+      </tbody>
+    </table>
+  </div>
+</div>
+
       `;
     } catch (e) {
       return `
@@ -1744,6 +1820,7 @@
                   <th>Sisa</th>
                   <th>Jatuh Tempo</th>
                   <th>Status</th>
+                  <th>Aksi</th>
                 </tr>
               </thead>
 
@@ -1762,11 +1839,51 @@
                       <td>${rupiah(remaining)}</td>
                       <td>${esc(i.due_date || '-')}</td>
                       <td>${remaining <= 0 ? 'Lunas' : 'Belum Lunas'}</td>
-                    </tr>
+                    <td>
+  <button type="button" data-action="cetakInvoiceSPP" data-id="${Number(i.id)}">
+    🖨️ Cetak Invoice
+  </button>
+  ${remaining > 0 ? `
+    <div style="margin-top:10px;min-width:180px">
+      <input
+        type="number"
+        data-proof-amount="${Number(i.id)}"
+        min="1"
+        max="${remaining}"
+        placeholder="Nominal transfer"
+        style="width:100%;margin-bottom:6px"
+      >
+
+      <input
+        type="file"
+        data-proof-file="${Number(i.id)}"
+        accept="image/jpeg,image/png,image/webp"
+        style="width:100%;margin-bottom:6px"
+      >
+
+      <input
+        type="text"
+        data-proof-note="${Number(i.id)}"
+        maxlength="500"
+        placeholder="Catatan (opsional)"
+        style="width:100%;margin-bottom:6px"
+      >
+
+      <button
+        type="button"
+        data-action="uploadBuktiSPP"
+        data-id="${Number(i.id)}"
+      >
+        📤 Kirim Bukti
+      </button>
+    </div>
+  ` : ''}
+</td>
+                      </tr>
                   `;
                 }).join('') || `
                   <tr>
-                    <td colspan="7">Belum ada tagihan SPP.</td>
+                   <td colspan="8">Belum ada tagihan SPP.</td>
                   </tr>
                 `}
               </tbody>
@@ -2288,6 +2405,39 @@
       `);
     },
 
+    // ---------- Verifikasi Bukti Pembayaran SPP ----------
+
+async verifikasiBuktiSPP(el) {
+  const id = Number(el.dataset.id);
+  const status = el.dataset.status;
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error('ID bukti pembayaran tidak valid.');
+  }
+
+  if (!['diterima', 'ditolak'].includes(status)) {
+    throw new Error('Status verifikasi tidak valid.');
+  }
+
+  const pesan = status === 'diterima'
+    ? 'Yakin ingin menerima bukti pembayaran ini? Pembayaran akan dicatat ke riwayat SPP.'
+    : 'Yakin ingin menolak bukti pembayaran ini?';
+
+  if (!confirm(pesan)) return;
+
+  await api(`/portal/keuangan/bukti/${id}/verifikasi`, 'PUT', {
+    status,
+    method: 'Transfer'
+  });
+
+  toast(
+    status === 'diterima'
+      ? 'Bukti pembayaran diterima dan pembayaran dicatat.'
+      : 'Bukti pembayaran ditolak.'
+  );
+
+  route();
+},
     // ---------- Hapus generik ----------
 
     async del(el) {
@@ -2682,7 +2832,281 @@
         alert(e.message || 'Gagal mencetak bukti pembayaran.');
       }
     },
+    // ---------- Upload Bukti Pembayaran SPP ----------
 
+async uploadBuktiSPP(el) {
+  const id = Number(el.dataset.id);
+
+  const amountInput = document.querySelector(
+    `[data-proof-amount="${id}"]`
+  );
+
+  const fileInput = document.querySelector(
+    `[data-proof-file="${id}"]`
+  );
+
+  const noteInput = document.querySelector(
+    `[data-proof-note="${id}"]`
+  );
+
+  const amount = Number(amountInput?.value);
+  const file = fileInput?.files?.[0];
+  const note = noteInput?.value?.trim() || '';
+
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error('Masukkan nominal pembayaran yang benar.');
+  }
+
+  if (!file) {
+    throw new Error('Pilih foto bukti pembayaran terlebih dahulu.');
+  }
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('Format bukti harus JPG, PNG, atau WEBP.');
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Ukuran bukti maksimal 5 MB.');
+  }
+
+  const proof = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(
+      new Error('Gagal membaca foto bukti pembayaran.')
+    );
+
+    reader.readAsDataURL(file);
+  });
+
+  if (!confirm('Yakin ingin mengirim bukti pembayaran ini?')) {
+    return;
+  }
+
+  await api(`/portal/keuangan/saya/${id}/bukti`, 'POST', {
+    amount,
+    proof,
+    note
+  });
+
+  toast('Bukti pembayaran berhasil dikirim dan menunggu verifikasi.');
+  route();
+},
+// ================= CETAK INVOICE SPP =================
+
+async cetakInvoiceSPP(el) {
+  const id = Number(el.dataset.id);
+
+  if (!id) {
+    throw new Error('ID tagihan tidak valid.');
+  }
+
+  const win = window.open('', '_blank');
+
+  if (!win) {
+    alert('Izinkan pop-up pada browser terlebih dahulu.');
+    return;
+  }
+
+  try {
+    const endpoint = me?.role === 'siswa'
+      ? '/portal/keuangan/saya'
+      : '/portal/keuangan';
+
+    const data = await api(endpoint);
+
+    const p = (data.rows || []).find(
+      item => Number(item.id) === id
+    );
+
+    if (!p) {
+      win.close();
+      alert('Data tagihan tidak ditemukan.');
+      return;
+    }
+
+    const rupiah = n =>
+      'Rp ' + Number(n || 0).toLocaleString('id-ID');
+
+    const tanggal = value => {
+      if (!value) return '-';
+
+      const d = new Date(value + 'T00:00:00');
+
+      return isNaN(d.getTime())
+        ? value
+        : d.toLocaleDateString('id-ID', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric'
+          });
+    };
+
+    const total = Number(p.amount || 0);
+    const dibayar = Number(p.amount_paid || 0);
+    const sisa = Math.max(0, total - dibayar);
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+        <meta charset="UTF-8">
+        <title>Invoice SPP</title>
+
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 30px;
+            color: #222;
+          }
+
+          .invoice {
+            max-width: 700px;
+            margin: auto;
+            border: 1px solid #ddd;
+            padding: 30px;
+          }
+
+          h2 {
+            text-align: center;
+            margin-bottom: 5px;
+          }
+
+          .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+          }
+
+          .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            padding: 13px 0;
+            border-bottom: 1px solid #eee;
+          }
+
+          .total {
+            font-size: 19px;
+            font-weight: bold;
+          }
+
+          .remaining {
+            color: #b45309;
+            font-weight: bold;
+          }
+
+          .status {
+            margin-top: 20px;
+            padding: 12px;
+            background: #f3f4f6;
+            text-align: center;
+            font-weight: bold;
+          }
+
+          .footer {
+            text-align: center;
+            margin-top: 35px;
+          }
+
+          button {
+            display: block;
+            margin: 25px auto;
+            padding: 12px 25px;
+            cursor: pointer;
+          }
+
+          @media print {
+            button {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="invoice">
+
+          <h2>INVOICE TAGIHAN SPP</h2>
+          <p class="subtitle">SIAKAD OBE SEKOLAH</p>
+
+          <div class="row">
+            <span>Nomor Invoice</span>
+            <b>INV-SPP-${Number(p.id)}</b>
+          </div>
+
+          <div class="row">
+            <span>Nama Siswa</span>
+            <b>${esc(p.student_name || me?.name || '-')}</b>
+          </div>
+
+          <div class="row">
+            <span>NIS</span>
+            <b>${esc(p.nis || '-')}</b>
+          </div>
+
+          <div class="row">
+            <span>Kelas</span>
+            <b>${esc(p.class_name || '-')}</b>
+          </div>
+
+          <div class="row">
+            <span>Nama Tagihan</span>
+            <b>${esc(p.title || '-')}</b>
+          </div>
+
+          <div class="row">
+            <span>Periode</span>
+            <b>${esc(p.period || '-')}</b>
+          </div>
+
+          <div class="row">
+            <span>Jatuh Tempo</span>
+            <b>${esc(tanggal(p.due_date))}</b>
+          </div>
+
+          <div class="row total">
+            <span>Total Tagihan</span>
+            <b>${rupiah(total)}</b>
+          </div>
+
+          <div class="row">
+            <span>Sudah Dibayar</span>
+            <b>${rupiah(dibayar)}</b>
+          </div>
+
+          <div class="row remaining">
+            <span>Sisa Pembayaran</span>
+            <b>${rupiah(sisa)}</b>
+          </div>
+
+          <div class="status">
+            STATUS: ${sisa <= 0 ? 'LUNAS' : 'BELUM LUNAS'}
+          </div>
+
+          <div class="footer">
+            <p>Mohon melakukan pembayaran sebelum tanggal jatuh tempo.</p>
+            <b>SIAKAD OBE</b>
+          </div>
+
+        </div>
+
+        <button onclick="window.print()">
+          🖨️ Cetak / Simpan PDF
+        </button>
+      </body>
+      </html>
+    `);
+
+    win.document.close();
+    win.focus();
+
+  } catch (e) {
+    win.close();
+    alert(e.message || 'Gagal mencetak invoice.');
+  }
+},
     // ================= TAMPILKAN LAPORAN SPP =================
 
     async tampilkanLaporanSPP() {

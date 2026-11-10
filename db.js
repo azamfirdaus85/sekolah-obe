@@ -248,7 +248,7 @@ const NEW_TABLES = [
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
 
-  // Riwayat pembayaran SPP
+    // Riwayat pembayaran SPP
   `CREATE TABLE IF NOT EXISTS spp_payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -258,9 +258,22 @@ const NEW_TABLES = [
     note TEXT,
     recorded_by INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  // Bukti pembayaran SPP yang diunggah siswa
+  `CREATE TABLE IF NOT EXISTS spp_payment_proofs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    proof_data TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'menunggu',
+    reviewed_by INTEGER,
+    reviewed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`
 ];
-
 /* =====================================================
    INDEX DATABASE
    ===================================================== */
@@ -319,14 +332,21 @@ const MIGRATIONS = [
   `UPDATE users SET must_change = 0 WHERE must_change IS NULL`,
   `UPDATE reflections SET created_at = datetime('now') WHERE created_at IS NULL`,
 
-  `CREATE TRIGGER IF NOT EXISTS trg_reflections_created
+    `CREATE TRIGGER IF NOT EXISTS trg_reflections_created
    AFTER INSERT ON reflections
    WHEN NEW.created_at IS NULL
    BEGIN
      UPDATE reflections
      SET created_at = datetime('now')
      WHERE id = NEW.id;
-   END`
+   END`,
+
+  // Menghubungkan pembayaran dengan bukti yang diverifikasi
+  `ALTER TABLE spp_payments ADD COLUMN proof_id INTEGER`,
+
+  // Mencegah satu bukti tercatat sebagai pembayaran lebih dari sekali
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_spp_payment_proof
+   ON spp_payments (proof_id)`
 ];
 
 const ALL_STATEMENTS = [
