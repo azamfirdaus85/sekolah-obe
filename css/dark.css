@@ -1,0 +1,235 @@
+/* =====================================================
+   MODE GELAP - SIAKAD OBE
+   Dimuat SETELAH style.css. Aktif saat <html data-theme="dark">.
+   Tidak mengubah style.css; hanya menimpa warna.
+   ===================================================== */
+
+/* Tombol tema melayang (halaman login) */
+.theme-fab {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 90;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(100, 116, 139, .4);
+  background: rgba(255, 255, 255, .9);
+  font-size: 1.15rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .18);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --d-bg: #0b1120;
+  --d-surface: #131c2e;
+  --d-surface-2: #1a2640;
+  --d-border: #263449;
+  --d-text: #e2e8f0;
+  --d-text-strong: #f8fafc;
+  --d-muted: #94a3b8;
+  --d-accent: #818cf8;
+}
+
+html[data-theme="dark"] body,
+html[data-theme="dark"] .main,
+html[data-theme="dark"] .content,
+html[data-theme="dark"] .shell {
+  background: var(--d-bg) !important;
+  color: var(--d-text) !important;
+}
+
+/* Teks */
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4,
+html[data-theme="dark"] b,
+html[data-theme="dark"] strong,
+html[data-theme="dark"] label { color: var(--d-text-strong) !important; }
+html[data-theme="dark"] .muted,
+html[data-theme="dark"] small,
+html[data-theme="dark"] time,
+html[data-theme="dark"] .subtitle { color: var(--d-muted) !important; }
+html[data-theme="dark"] a:not(.btn) { color: var(--d-accent); }
+
+/* Sidebar */
+html[data-theme="dark"] .side {
+  background: #0f1729 !important;
+  border-right: 1px solid var(--d-border) !important;
+}
+html[data-theme="dark"] .side nav a { color: #cbd5e1 !important; }
+html[data-theme="dark"] .side nav a:hover { background: rgba(129, 140, 248, .14) !important; }
+html[data-theme="dark"] .side nav a.on {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+  color: #fff !important;
+}
+html[data-theme="dark"] .brand,
+html[data-theme="dark"] .brand span { color: #f8fafc !important; }
+
+/* Header atas */
+html[data-theme="dark"] header.top,
+html[data-theme="dark"] .top {
+  background: rgba(15, 23, 41, .92) !important;
+  border-bottom: 1px solid var(--d-border) !important;
+  color: var(--d-text) !important;
+}
+html[data-theme="dark"] .who,
+html[data-theme="dark"] .who em { color: var(--d-text) !important; }
+
+/* Kartu & panel */
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .stat,
+html[data-theme="dark"] .quick-item,
+html[data-theme="dark"] .recent-item,
+html[data-theme="dark"] .news,
+html[data-theme="dark"] .sched-item,
+html[data-theme="dark"] .login-box,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .pick-siswa,
+html[data-theme="dark"] .quick {
+  background: var(--d-surface) !important;
+  color: var(--d-text) !important;
+  border-color: var(--d-border) !important;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, .35) !important;
+}
+html[data-theme="dark"] .quick-item:hover,
+html[data-theme="dark"] a.card:hover { background: var(--d-surface-2) !important; }
+html[data-theme="dark"] .modal-bg { background: rgba(2, 6, 23, .75) !important; }
+html[data-theme="dark"] .news,
+html[data-theme="dark"] .recent-item,
+html[data-theme="dark"] .sched-item { box-shadow: none !important; }
+
+/* Form */
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background: #0f1729 !important;
+  color: var(--d-text) !important;
+  border: 1px solid #334155 !important;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: #64748b !important; }
+html[data-theme="dark"] input:focus,
+html[data-theme="dark"] select:focus,
+html[data-theme="dark"] textarea:focus {
+  outline: 2px solid var(--d-accent) !important;
+  outline-offset: 0;
+  border-color: var(--d-accent) !important;
+}
+html[data-theme="dark"] option { background: #0f1729; color: var(--d-text); }
+
+/* Tombol */
+html[data-theme="dark"] .btn.ghost,
+html[data-theme="dark"] .btn.gh {
+  background: transparent !important;
+  color: var(--d-text) !important;
+  border: 1px solid #334155 !important;
+}
+html[data-theme="dark"] .btn.ghost:hover,
+html[data-theme="dark"] .btn.gh:hover { background: var(--d-surface-2) !important; }
+html[data-theme="dark"] .theme-fab {
+  background: var(--d-surface);
+  color: var(--d-text);
+  border-color: #334155;
+}
+
+/* Tabel */
+html[data-theme="dark"] table { background: transparent !important; color: var(--d-text) !important; }
+html[data-theme="dark"] th {
+  background: var(--d-surface-2) !important;
+  color: #cbd5e1 !important;
+  border-color: var(--d-border) !important;
+}
+html[data-theme="dark"] td { border-color: var(--d-border) !important; color: var(--d-text) !important; }
+html[data-theme="dark"] tbody tr:hover td { background: rgba(129, 140, 248, .08) !important; }
+html[data-theme="dark"] .low-score { color: #fca5a5 !important; }
+
+/* Tab */
+html[data-theme="dark"] .tabs { border-color: var(--d-border) !important; }
+html[data-theme="dark"] .tabs a { color: var(--d-muted) !important; background: transparent !important; }
+html[data-theme="dark"] .tabs a.on { color: #fff !important; background: #4f46e5 !important; }
+
+/* Label status */
+html[data-theme="dark"] .pill.ok   { background: rgba(34, 197, 94, .18) !important; color: #86efac !important; }
+html[data-theme="dark"] .pill.low  { background: rgba(239, 68, 68, .18) !important; color: #fca5a5 !important; }
+html[data-theme="dark"] .pill.warn { background: rgba(245, 158, 11, .18) !important; color: #fcd34d !important; }
+html[data-theme="dark"] .pill.info { background: rgba(59, 130, 246, .2) !important; color: #93c5fd !important; }
+html[data-theme="dark"] .pill.na   { background: rgba(148, 163, 184, .18) !important; color: #cbd5e1 !important; }
+
+/* Bar capaian */
+html[data-theme="dark"] .bar { background: #263449 !important; }
+
+/* Pesan */
+html[data-theme="dark"] .err,
+html[data-theme="dark"] .form-msg { color: #fca5a5 !important; }
+
+/* Halaman login */
+html[data-theme="dark"] .login-wrap { background: var(--d-bg) !important; }
+html[data-theme="dark"] .login-panel { background: var(--d-surface) !important; color: var(--d-text) !important; }
+
+/* Pencarian global & elemen dengan warna inline di app.js */
+html[data-theme="dark"] #gsInput {
+  background: #0f1729 !important;
+  color: var(--d-text) !important;
+  border-color: #334155 !important;
+}
+html[data-theme="dark"] #gsBox {
+  background: var(--d-surface) !important;
+  color: var(--d-text) !important;
+  border-color: var(--d-border) !important;
+}
+html[data-theme="dark"] [style*="background:#fff"],
+html[data-theme="dark"] [style*="background: #fff"],
+html[data-theme="dark"] [style*="background:#f1f5f9"],
+html[data-theme="dark"] [style*="background:#f3f4f6"],
+html[data-theme="dark"] [style*="background:#e5e7eb"] {
+  background: var(--d-surface-2) !important;
+  color: var(--d-text) !important;
+}
+html[data-theme="dark"] [style*="color:#0f172a"],
+html[data-theme="dark"] [style*="color:#111"],
+html[data-theme="dark"] [style*="color:#222"],
+html[data-theme="dark"] [style*="color:#444"],
+html[data-theme="dark"] [style*="color:#555"],
+html[data-theme="dark"] [style*="color:#666"] { color: var(--d-text) !important; }
+html[data-theme="dark"] [style*="color:#64748b"] { color: var(--d-muted) !important; }
+html[data-theme="dark"] [style*="border:1px solid #e2e8f0"],
+html[data-theme="dark"] [style*="border-bottom:1px solid #e2e8f0"],
+html[data-theme="dark"] [style*="border-bottom: 1px solid #eee"] { border-color: var(--d-border) !important; }
+
+/* Dokumen cetak (rapor, invoice) tetap terang agar jelas dan hemat tinta */
+html[data-theme="dark"] .rapor-paper,
+html[data-theme="dark"] .rapor-paper *,
+html[data-theme="dark"] .invoice,
+html[data-theme="dark"] .invoice *,
+html[data-theme="dark"] .receipt,
+html[data-theme="dark"] .receipt * {
+  background-color: #fff !important;
+  color: #111 !important;
+  border-color: #ccc !important;
+}
+
+/* Scrollbar */
+html[data-theme="dark"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme="dark"] ::-webkit-scrollbar-track { background: #0b1120; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+
+/* Cetak selalu terang */
+@media print {
+  html[data-theme="dark"] body,
+  html[data-theme="dark"] .main,
+  html[data-theme="dark"] .content,
+  html[data-theme="dark"] .shell,
+  html[data-theme="dark"] .card,
+  html[data-theme="dark"] table,
+  html[data-theme="dark"] td,
+  html[data-theme="dark"] th {
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  .theme-fab { display: none !important; }
+}

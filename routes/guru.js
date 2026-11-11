@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
 const { analyze, KKM } = require('../analysis');
+const { buildReport } = require('../rapor');
 
 router.use(auth, role('guru'));
 
@@ -166,8 +167,21 @@ router.delete('/teaching/:id/reflections/:rid', ownTeaching, wrap(async (req, re
 }));
 
 /* ---------- Wali kelas ---------- */
+const ALPA_PERHATIAN = 3; // alpa sebanyak ini atau lebih = perlu perhatian
+
 router.get('/homeroom', wrap(async (req, res) => {
-  const semester = str(req.query.semester, 40) || null;
+  const periods = await db.prepare(
+    'SELECT name, semester, is_active FROM academic_years ORDER BY name DESC, semester DESC'
+  ).all();
+  const semesters = periods.map((p) => `${p.semester} ${p.name}`);
+
+  let semester = str(req.query.semester, 40);
+  if (!semester) {
+    const aktif = periods.find((p) => Number(p.is_active) === 1);
+    semester = aktif ? `${aktif.semester} ${aktif.name}` : '';
+  }
+  const sem = semester || null;
+
   const classes = await db.prepare(
     'SELECT id, name FROM classes WHERE homeroom_teacher_id = ? ORDER BY name'
   ).all(req.user.id);
@@ -175,7 +189,7 @@ router.get('/homeroom', wrap(async (req, res) => {
   const result = [];
   for (const c of classes) {
     const students = await db.prepare(`
-      SELECT st.id AS student_id, st.nis, u.name
+      SELECT st.id AS student_id, st.user_id, st.nis, u.name
       FROM students st JOIN users u ON u.id = st.user_id
       WHERE st.class_id = ? ORDER BY u.name`).all(c.id);
 
@@ -189,15 +203,16 @@ router.get('/homeroom', wrap(async (req, res) => {
       JOIN assessments a ON a.teaching_id = t.id
       JOIN scores sc ON sc.assessment_id = a.id AND sc.student_id = st.id
       WHERE st.class_id = ? AND (? IS NULL OR t.semester = ?)
-      GROUP BY st.id, t.id`).all(c.id, semester, semester);
+      GROUP BY st.id, t.id`).all(c.id, sem, sem);
 
-    // rekap kehadiran per siswa per status
+    // rekap kehadiran per siswa per status, ikut semester yang dipilih
     const att = await db.prepare(`
       SELECT sa.student_id, sa.status, COUNT(*) AS n
       FROM student_attendance sa
       JOIN students st ON st.id = sa.student_id
-      WHERE st.class_id = ?
-      GROUP BY sa.student_id, sa.status`).all(c.id);
+      JOIN teaching t ON t.id = sa.teaching_id
+      WHERE st.class_id = ? AND (? IS NULL OR t.semester = ?)
+      GROUP BY sa.student_id, sa.status`).all(c.id, sem, sem);
 
     const finalsBy = new Map();
     for (const f of finals) {
@@ -218,14 +233,17 @@ router.get('/homeroom', wrap(async (req, res) => {
       const avg = list.length ? list.reduce((x, y) => x + y.final, 0) / list.length : null;
       const attendance = attBy.get(sid) || {};
       const total = Object.values(attendance).reduce((x, y) => x + y, 0);
+      const below = list.filter((f) => f.final < KKM).map((f) => f.subject);
       return {
         student_id: sid,
+        user_id: Number(s.user_id),
         nis: s.nis,
         name: s.name,
         average: avg === null ? null : Math.round(avg * 10) / 10,
-        below_kkm: list.filter((f) => f.final < KKM).map((f) => f.subject),
+        below_kkm: below,
         attendance,
-        attendance_pct: total ? Math.round(((attendance.hadir || 0) / total) * 100) : null
+        attendance_pct: total ? Math.round(((attendance.hadir || 0) / total) * 100) : null,
+        needs_attention: below.length > 0 || (attendance.alpa || 0) >= ALPA_PERHATIAN
       };
     });
 
@@ -235,11 +253,29 @@ router.get('/homeroom', wrap(async (req, res) => {
       kkm: KKM,
       total: rows.length,
       under_kkm: rows.filter((r) => r.below_kkm.length).length,
+      attention: rows.filter((r) => r.needs_attention).length,
       students: rows
     });
   }
 
-  res.json(result); // array kosong = guru ini bukan wali kelas
+  // classes kosong = guru ini bukan wali kelas
+  res.json({ semester: semester || null, semesters, alpa_limit: ALPA_PERHATIAN, classes: result });
+}));
+
+// E-Rapor siswa perwalian (hanya untuk siswa di kelas yang diwalikan guru ini)
+router.get('/homeroom/rapor/:userId', wrap(async (req, res) => {
+  const own = await db.prepare(`
+    SELECT st.id FROM students st
+    JOIN classes c ON c.id = st.class_id
+    WHERE st.user_id = ? AND c.homeroom_teacher_id = ?`).get(req.params.userId, req.user.id);
+
+  if (!own) return res.status(404).json({ error: 'Siswa bukan anggota kelas perwalian Anda' });
+
+  const semester = req.query.semester ? String(req.query.semester).slice(0, 40) : null;
+  const d = await buildReport(Number(req.params.userId), semester);
+
+  if (!d) return res.status(404).json({ error: 'Data siswa tidak ditemukan' });
+  res.json(d);
 }));
 
 module.exports = router;

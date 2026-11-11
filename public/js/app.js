@@ -350,27 +350,38 @@
       <div class="card"><h2>Alumni</h2><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas terakhir</th><th>Tanggal lulus</th><th></th></tr></thead><tbody>${alumniRows}</tbody></table></div></div>`;
   }
 
-  // ---------- WALI KELAS (guru) ----------
-  async function waliView() {
-    const list = await api('/guru/homeroom');
-    if (!list.length) {
+   // ---------- WALI KELAS (guru) ----------
+  async function waliView(semParam) {
+    const sem = semParam ? decodeURIComponent(semParam) : '';
+    const d = await api('/guru/homeroom' + (sem ? '?semester=' + encodeURIComponent(sem) : ''));
+
+    if (!d.classes.length) {
       return '<h1>Wali Kelas</h1><div class="card"><p class="muted">Anda belum ditetapkan sebagai wali kelas. Hubungi admin.</p></div>';
     }
-    return '<h1>Wali Kelas</h1>' + list.map((c) => {
+
+    const picker = d.semesters.length
+      ? `<div class="card"><div class="field"><label>Semester</label><select data-change="pickWaliSemester">${d.semesters
+          .map((x) => `<option value="${esc(x)}" ${x === d.semester ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+          <p class="muted small">Nilai dan absensi dihitung dari semester yang dipilih. Siswa ditandai "Perlu perhatian" bila ada nilai di bawah KKM atau alpa ${d.alpa_limit} kali atau lebih.</p></div>`
+      : '';
+
+    return '<h1>Wali Kelas</h1>' + picker + d.classes.map((c) => {
       const rows = c.students.length
         ? c.students.map((s) => {
             const a = s.attendance || {};
-            return `<tr><td>${esc(s.nis || '')}</td><td>${esc(s.name)}</td>
+            return `<tr><td>${esc(s.nis || '')}</td>
+              <td>${esc(s.name)}${s.needs_attention ? ' <span class="pill warn">Perlu perhatian</span>' : ''}</td>
               <td class="num">${fmt(s.average)}</td>
               <td>${s.below_kkm.length ? `<span class="pill low">${esc(s.below_kkm.join(', '))}</span>` : (s.average == null ? '<span class="pill na">Belum ada nilai</span>' : '<span class="pill ok">Aman</span>')}</td>
               <td class="num">${a.hadir || 0}</td><td class="num">${a.izin || 0}</td><td class="num">${a.sakit || 0}</td>
               <td class="num ${a.alpa ? 'low-score' : ''}">${a.alpa || 0}</td>
-              <td class="num">${s.attendance_pct == null ? '-' : s.attendance_pct + '%'}</td></tr>`;
+              <td class="num">${s.attendance_pct == null ? '-' : s.attendance_pct + '%'}</td>
+              <td><button class="btn sm ghost" data-action="bukaRapor" data-url="/guru/homeroom/rapor/${s.user_id}">🖨️ Rapor</button></td></tr>`;
           }).join('')
-        : '<tr><td colspan="9" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+        : '<tr><td colspan="10" class="muted">Belum ada siswa di kelas ini.</td></tr>';
       return `<div class="card"><h2>${esc(c.name)}</h2>
-        <p class="muted">${c.total} siswa &bull; ${c.under_kkm} siswa punya nilai di bawah KKM ${c.kkm}</p>
-        <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Rata-rata</th><th>Di bawah KKM</th><th class="num">Hadir</th><th class="num">Izin</th><th class="num">Sakit</th><th class="num">Alpa</th><th class="num">% Hadir</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        <p class="muted">${c.total} siswa &bull; ${c.under_kkm} siswa punya nilai di bawah KKM ${c.kkm} &bull; ${c.attention} siswa perlu perhatian</p>
+        <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th class="num">Rata-rata</th><th>Di bawah KKM</th><th class="num">Hadir</th><th class="num">Izin</th><th class="num">Sakit</th><th class="num">Alpa</th><th class="num">% Hadir</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }).join('');
   }
 
@@ -2450,7 +2461,7 @@ async verifikasiBuktiSPP(el) {
 
     // ---------- Pengguna ----------
 
-    async resetPw(el) {
+        async resetPw(el) {
       const pw = prompt('Masukkan password baru (minimal 8 karakter):');
       if (pw === null) return;
 
@@ -2458,14 +2469,12 @@ async verifikasiBuktiSPP(el) {
         throw new Error('Password minimal 8 karakter.');
       }
 
-      // TEBAKAN: PUT /admin/users/:id/password
-      await api(`/admin/users/${el.dataset.id}/password`, 'PUT', { password: pw });
+      await api(`/admin/users/${el.dataset.id}`, 'PUT', { password: pw });
       toast('Password berhasil direset');
     },
 
     async toggleActive(el) {
-      // TEBAKAN: PUT /admin/users/:id/active
-      await api(`/admin/users/${el.dataset.id}/active`, 'PUT', {
+      await api(`/admin/users/${el.dataset.id}`, 'PUT', {
         active: Number(el.dataset.active)
       });
       toast('Status pengguna diperbarui');
@@ -3292,7 +3301,9 @@ async cetakInvoiceSPP(el) {
     pickNaikKelas(el) {
       location.hash = '#/naik/' + el.value;
     },
-
+    pickWaliSemester(el) {
+      location.hash = '#/wali/' + encodeURIComponent(el.value);
+    },
     restoreAlumni(el) {
       if (!el.value) return;
 
