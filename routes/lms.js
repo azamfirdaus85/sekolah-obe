@@ -65,6 +65,20 @@ function ensure() {
         submitted_at TEXT DEFAULT (datetime('now')),
         UNIQUE(task_id, student_id)
       )`).run();
+            // Tambahkan kolom penilaian jika database sudah pernah dibuat.
+      for (const sql of [
+        'ALTER TABLE lms_submissions ADD COLUMN score REAL',
+        'ALTER TABLE lms_submissions ADD COLUMN feedback TEXT',
+        'ALTER TABLE lms_submissions ADD COLUMN graded_at TEXT'
+      ]) {
+        try {
+          await db.prepare(sql).run();
+        } catch (e) {
+          if (!/duplicate column name/i.test(String(e.message || e))) {
+            throw e;
+          }
+        }
+      }   
     })().catch((e) => {
       ready = null;
       throw e;
@@ -85,8 +99,8 @@ router.use(async (req, res, next) => {
     res.status(500).json({ error: 'Gagal menyiapkan data materi dan tugas.' });
   }
 });
-
-const isGuru = (req) => req.user.role === 'guru';
+const isGuru = (req) =>
+  String(req.user?.role || '').trim().toLowerCase() === 'guru';
 const fail = (res, e) => {
   console.error(e);
   return res.status(500).json({ error: 'Terjadi kesalahan: ' + String((e && e.message) || e) });
@@ -166,14 +180,19 @@ router.get('/teaching/:id', async (req, res) => {
 
     let tasks;
     if (student) {
-      tasks = await db.prepare(`
-        SELECT k.id, k.title, k.instructions, k.link, k.due_date, k.created_at,
-               x.answer AS my_answer, x.link AS my_link, x.submitted_at AS my_at
-        FROM lms_tasks k
-        LEFT JOIN lms_submissions x ON x.task_id = k.id AND x.student_id = ?
-        WHERE k.teaching_id = ?
-        ORDER BY k.id DESC
-      `).all(student.id, t.id);
+     tasks = await db.prepare(`
+  SELECT k.id, k.title, k.instructions, k.link, k.due_date, k.created_at,
+    x.answer AS my_answer,
+    x.link AS my_link,
+    x.submitted_at AS my_at,
+    x.score AS my_score,
+    x.feedback AS my_feedback
+  FROM lms_tasks k
+  LEFT JOIN lms_submissions x
+    ON x.task_id = k.id AND x.student_id = ?
+  WHERE k.teaching_id = ?
+  ORDER BY k.id DESC
+`).all(student.id, t.id);
       tasks.forEach((k) => {
         k.my_late = !!(k.my_at && k.due_date && dayJkt(k.my_at) > k.due_date);
       });
@@ -299,7 +318,9 @@ router.get('/tasks/:id/submissions', async (req, res) => {
     if (!k) return res.status(404).json({ error: 'Tugas tidak ditemukan.' });
 
     const rows = await db.prepare(`
-      SELECT st.id AS student_id, st.nis, u.name, x.answer, x.link, x.submitted_at
+    SELECT st.id AS student_id, st.nis, u.name,
+       x.answer, x.link, x.submitted_at,
+       x.score, x.feedback
       FROM students st
       JOIN users u ON u.id = st.user_id
       LEFT JOIN lms_submissions x ON x.task_id = ? AND x.student_id = st.id
@@ -326,7 +347,57 @@ router.get('/tasks/:id/submissions', async (req, res) => {
     return fail(res, e);
   }
 });
+// ---------- Guru: beri nilai dan komentar tugas ----------
+router.post('/tasks/:id/grade', async (req, res) => {
+  if (!isGuru(req)) {
+    return res.status(403).json({ error: 'Hanya guru yang bisa memberi nilai.' });
+  }
 
+  try {
+    const k = await guruTask(req);
+    if (!k) return res.status(404).json({ error: 'Tugas tidak ditemukan.' });
+
+    const studentId = Number(req.body.student_id);
+    const rawScore = req.body.score;
+    const score = Number(rawScore);
+    const feedback = str(req.body.feedback, 1000);
+
+    if (!Number.isSafeInteger(studentId) || studentId <= 0) {
+      return bad(res, 'Data siswa tidak valid.');
+    }
+
+    if (
+      rawScore === '' ||
+      rawScore === undefined ||
+      !Number.isFinite(score) ||
+      score < 0 ||
+      score > 100
+    ) {
+      return bad(res, 'Nilai harus antara 0 sampai 100.');
+    }
+
+    const submission = await db.prepare(`
+      SELECT x.id
+      FROM lms_submissions x
+      JOIN students st ON st.id = x.student_id
+      WHERE x.task_id = ? AND x.student_id = ? AND st.class_id = ?
+    `).get(k.id, studentId, k.class_id);
+
+    if (!submission) {
+      return bad(res, 'Siswa belum mengumpulkan tugas.');
+    }
+
+    await db.prepare(`
+      UPDATE lms_submissions
+      SET score = ?, feedback = ?, graded_at = datetime('now')
+      WHERE task_id = ? AND student_id = ?
+    `).run(score, feedback || null, k.id, studentId);
+
+    res.json({ ok: true });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
 // ---------- Siswa: kumpulkan jawaban ----------
 router.post('/tasks/:id/submit', async (req, res) => {
   if (isGuru(req)) return res.status(403).json({ error: 'Hanya siswa yang bisa mengumpulkan tugas.' });
@@ -349,9 +420,14 @@ router.post('/tasks/:id/submit', async (req, res) => {
       `INSERT INTO lms_submissions(task_id, student_id, answer, link, submitted_at)
        VALUES(?, ?, ?, ?, datetime('now'))
        ON CONFLICT(task_id, student_id)
-       DO UPDATE SET answer = excluded.answer, link = excluded.link, submitted_at = excluded.submitted_at`
-    ).run(k.id, st.id, answer || null, link.value);
-
+     DO UPDATE SET
+  answer = excluded.answer,
+  link = excluded.link,
+  submitted_at = excluded.submitted_at,
+  score = NULL,
+  feedback = NULL,
+    graded_at = NULL
+      `).run(k.id, st.id, answer || null, link.value);
     res.json({ ok: true });
   } catch (e) {
     return fail(res, e);

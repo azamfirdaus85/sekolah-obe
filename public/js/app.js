@@ -991,6 +991,8 @@
 
   async function lmsView(id, tab, extra) {
     const guru = me.role === 'guru';
+    console.log('ROLE LOGIN:', me.role);
+console.log('STATUS GURU:', guru);
 
     if (!id) {
       const d = await api('/lms/teachings');
@@ -1007,16 +1009,38 @@
     if (guru && tab === 'tugas' && extra) {
       const d = await api(`/lms/tasks/${extra}/submissions`);
       const done = d.rows.filter((r) => r.submitted_at).length;
-      const rows = d.rows.length
-        ? d.rows.map((r) => `<tr><td>${esc(r.nis || '')}</td><td>${esc(r.name)}</td>
-            <td>${r.submitted_at ? (r.late ? '<span class="pill warn">Terlambat</span>' : '<span class="pill ok">Terkumpul</span>') : '<span class="pill na">Belum</span>'}</td>
-            <td class="small">${r.submitted_at ? esc(fdateTime(r.submitted_at)) : '-'}</td>
-            <td>${lmsText(r.answer)}${lmsLink(r.link)}</td></tr>`).join('')
-        : '<tr><td colspan="5" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+     
+const rows = d.rows.length
+  ? d.rows.map((r) => `<tr>
+      <td>${esc(r.nis || '')}</td>
+      <td>${esc(r.name)}</td>
+      <td>${r.submitted_at ? (r.late ? '<span class="pill warn">Terlambat</span>' : '<span class="pill ok">Terkumpul</span>') : '<span class="pill na">Belum</span>'}</td>
+      <td class="small">${r.submitted_at ? esc(fdateTime(r.submitted_at)) : '-'}</td>
+      <td>${lmsText(r.answer)}${lmsLink(r.link)}</td>
+      <td>
+        ${r.submitted_at ? `
+          <form class="form" data-form="gradeLms" data-task="${extra}" style="min-width:170px">
+            <input type="hidden" name="student_id" value="${r.student_id}">
+            <div class="field">
+              <label>Nilai (0–100)</label>
+              <input type="number" name="score" min="0" max="100" step="1" required value="${r.score ?? ''}">
+            </div>
+            <div class="field">
+              <label>Komentar guru</label>
+              <textarea name="feedback" maxlength="1000">${esc(r.feedback || '')}</textarea>
+            </div>
+            <button class="btn sm" type="submit">Simpan Penilaian</button>
+          </form>
+          ${r.score != null ? `<p class="small muted">Nilai tersimpan: ${r.score}/100</p>` : '<p class="small muted">Belum dinilai</p>'}
+        ` : '<span class="muted small">Belum bisa dinilai</span>'}
+      </td>
+    </tr>`).join('')
+  : '<tr><td colspan="6" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+
       return `<p><a href="#/lms/${id}" class="btn sm ghost">&larr; Kembali</a></p>
         <h1>${esc(d.task.title)}</h1>
         <p class="muted">${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}${d.task.due_date ? ' &bull; Tenggat ' + fdate2(d.task.due_date) : ''} &bull; ${done} dari ${d.rows.length} siswa sudah mengumpulkan</p>
-        <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Waktu</th><th>Jawaban</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Waktu</th><th>Jawaban</th><th>Penilaian</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
 
     const d = await api('/lms/teaching/' + id);
@@ -1062,6 +1086,19 @@
           return `<div class="news"><div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(k.title)}</h3><span>${status}</span></div>
             <time>${k.due_date ? 'Tenggat ' + fdate2(k.due_date) : 'Tanpa tenggat'}</time>${lmsText(k.instructions)}${lmsLink(k.link)}
             ${k.my_at ? `<p class="muted small">Terakhir dikirim: ${esc(fdateTime(k.my_at))}</p>` : ''}
+            
+${k.my_at ? `
+  <div class="card" style="margin:.6rem 0">
+    <b>📊 Hasil Penilaian</b>
+    ${k.my_score != null
+      ? `<h2>Nilai: ${k.my_score}/100</h2>`
+      : '<p class="muted">Belum dinilai oleh guru.</p>'}
+    ${k.my_feedback
+      ? `<p><b>Komentar guru:</b><br>${esc(k.my_feedback)}</p>`
+      : ''}
+  </div>
+` : ''}
+
             <form class="form" data-form="post" data-url="/lms/tasks/${k.id}/submit" style="margin-top:.6rem">
               <div class="field"><label>Jawaban</label><textarea name="answer" maxlength="3000">${esc(k.my_answer || '')}</textarea></div>
               <div class="field"><label>Tautan jawaban (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://" value="${esc(k.my_link || '')}"></div>
@@ -2035,6 +2072,17 @@ async function keuanganView() {
         else toast(e.message, false);
       }
     },
+
+async gradeLms(data, f) {
+  await api(`/lms/tasks/${f.dataset.task}/grade`, 'POST', {
+    student_id: Number(data.student_id),
+    score: Number(data.score),
+    feedback: data.feedback
+  });
+
+  toast('Penilaian berhasil disimpan');
+  route();
+},
 
     async changePw(data, f) {
       const msg = f.querySelector('.form-msg');
