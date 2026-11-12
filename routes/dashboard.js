@@ -48,6 +48,19 @@ router.get('/ringkasan', async (req, res) => {
         where += ' AND t.class_id = ?';
         args.push(me.class_id);
       }
+    } else if (req.user.role === 'orang_tua') {
+      // Orang tua hanya melihat jadwal kelas anaknya
+      const kids = await db.prepare(`
+        SELECT DISTINCT s.class_id
+        FROM parent_student_links l
+        JOIN students s ON s.id = l.student_id
+        WHERE l.parent_user_id = ? AND s.class_id IS NOT NULL`).all(req.user.id);
+      if (!kids.length) {
+        where += ' AND 1 = 0';
+      } else {
+        where += ` AND t.class_id IN (${kids.map(() => '?').join(',')})`;
+        args.push(...kids.map((k) => Number(k.class_id)));
+      }
     }
 
     const jadwal = await db.prepare(`
@@ -157,6 +170,15 @@ router.get('/grafik', async (req, res) => {
   try {
     const r = req.user.role;
 
+    // Orang tua tidak boleh melihat statistik seluruh sekolah
+    if (r === 'orang_tua') {
+      return res.json({
+        kkm: KKM,
+        nilai: { title: 'Nilai', rows: [] },
+        kehadiran: { title: 'Kehadiran', type: 'harian', rows: [] }
+      });
+    }
+
     // ----- SISWA: nilai per mapel + rekap kehadiran sendiri -----
     if (r === 'siswa') {
       const out = {
@@ -257,7 +279,7 @@ router.get('/grafik', async (req, res) => {
 });
 
 /* ---------- Pencarian global ---------- */
-const ROLE_LABEL = { admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah' };
+const ROLE_LABEL = { admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah', orang_tua: 'Orang Tua/Wali' };
 
 router.get('/search', async (req, res) => {
   try {

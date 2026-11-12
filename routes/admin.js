@@ -144,9 +144,27 @@ router.get('/backup', async (req, res) => {
     const data = {};
     const counts = {};
 
+    // Foto profil dan bukti transfer berukuran besar (base64). Secara bawaan tidak
+    // disertakan supaya file backup tidak melewati batas respons server (Vercel ~4,5 MB).
+    // Tambahkan ?lengkap=1 pada alamat backup bila ingin menyertakannya.
+    const HEAVY = { users: ['avatar_data'], spp_payment_proofs: ['proof_data'] };
+    const full = String(req.query.lengkap || '') === '1';
+
     for (const t of tables) {
       const name = String(t.name);
-      const rows = await db.prepare(`SELECT * FROM "${name.replace(/"/g, '""')}"`).all();
+      const quoted = `"${name.replace(/"/g, '""')}"`;
+      let cols = '*';
+
+      if (!full && HEAVY[name]) {
+        const info = await db.prepare(`PRAGMA table_info(${quoted})`).all();
+        cols = info
+          .map((c) => (HEAVY[name].includes(String(c.name))
+            ? `NULL AS "${String(c.name).replace(/"/g, '""')}"`
+            : `"${String(c.name).replace(/"/g, '""')}"`))
+          .join(', ');
+      }
+
+      const rows = await db.prepare(`SELECT ${cols} FROM ${quoted}`).all();
       data[name] = rows;
       counts[name] = rows.length;
     }
@@ -156,6 +174,9 @@ router.get('/backup', async (req, res) => {
         app: 'SIAKAD OBE Sekolah',
         created_at: new Date().toISOString(),
         counts,
+        note: full
+          ? 'Backup lengkap.'
+          : 'Foto profil dan bukti pembayaran tidak disertakan. Tambahkan ?lengkap=1 untuk menyertakannya.',
         tables: data
       },
       (k, v) => (typeof v === 'bigint' ? Number(v) : v)
@@ -189,12 +210,12 @@ router.get('/users/export', async (req, res) => {
     `).all();
 
     const data = users.map((u) => ({
-      Username: u.username,
-      'Nama Lengkap': u.name,
+      Username: xcell(u.username),
+      'Nama Lengkap': xcell(u.name),
       Peran: u.role,
-      NIS: u.nis || '',
-      Kelas: u.class_name || '',
-      Status: u.active ? 'Aktif' : 'Nonaktif'
+      NIS: xcell(u.nis || ''),
+      Kelas: xcell(u.class_name || ''),
+      Status: Number(u.active) === 0 ? 'Nonaktif' : 'Aktif'
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(data);
@@ -231,6 +252,8 @@ const handleDb = (res, e) => {
   const m = String(e && e.message || e);
 
   if (m.includes('UNIQUE')) {
+    if (/username/i.test(m)) return bad(res, 'Username sudah dipakai.');
+    if (/nis/i.test(m)) return bad(res, 'NIS sudah dipakai.');
     return bad(res, 'Data sudah ada (duplikat).');
   }
 
@@ -238,8 +261,14 @@ const handleDb = (res, e) => {
     return bad(res, 'Data masih dipakai oleh data lain, tidak bisa dihapus.');
   }
 
-  return res.status(500).json({ error: 'Gagal simpan: ' + m });
+  return res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
 };
+
+// Daftar tabel yang ada (beberapa tabel dibuat otomatis saat fitur pertama dipakai)
+async function existingTables() {
+  const rows = await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+  return new Set(rows.map((r) => String(r.name)));
+}
 
 // HELPER INSERT UNTUK TURSO DAN DATABASE LOKAL
 async function insertReturnId(sql, args = []) {
@@ -294,6 +323,7 @@ router.get('/users', async (req, res) => {
         u.name,
         u.role,
         u.active,
+        st.id AS student_id,
         st.nis,
         c.name AS class_name
       FROM users u
@@ -317,67 +347,106 @@ router.get('/users', async (req, res) => {
 });
 
 router.post('/users', async (req, res) => {
-  const username = str(req.body.username, 50);
-  const name = str(req.body.name);
-  const r = str(req.body.role, 10);
-  const password = String(req.body.password || '');
-
-  if (!/^[A-Za-z0-9_.@-]{3,50}$/.test(username)) {
-    return bad(res, 'Username 3-50 karakter.');
-  }
-
-  if (!name) {
-    return bad(res, 'Nama wajib diisi.');
-  }
-
-  if (!['admin', 'guru', 'siswa', 'kepsek'].includes(r)) {
-    return bad(res, 'Peran tidak valid.');
-  }
-
-  if (password.length < 8) {
-    return bad(res, 'Password minimal 8 karakter.');
-  }
+  let createdId = null;
 
   try {
-    const info = await insertReturnId(
-      'INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)',
-      [username, bcrypt.hashSync(password, 10), name, r]
-    );
+    const body = req.body || {};
+    const username = str(body.username, 50);
+    const name = str(body.name);
+    const r = str(body.role, 10);
+    const password = String(body.password || '');
 
+    if (!/^[A-Za-z0-9_.@-]{3,50}$/.test(username)) {
+      return bad(res, 'Username 3-50 karakter.');
+    }
+
+    if (!name) {
+      return bad(res, 'Nama wajib diisi.');
+    }
+
+    if (!['admin', 'guru', 'siswa', 'kepsek', 'orang_tua'].includes(r)) {
+      return bad(res, 'Peran tidak valid.');
+    }
+
+    if (password.length < 8) {
+      return bad(res, 'Password minimal 8 karakter.');
+    }
+
+    if (password.length > 72) {
+      return bad(res, 'Password maksimal 72 karakter.');
+    }
+
+    // Semua pemeriksaan dilakukan SEBELUM akun dibuat, supaya tidak ada akun setengah jadi
+    let parentStudentId = null;
+    if (r === 'orang_tua') {
+      parentStudentId = Number(body.student_id);
+
+      if (!Number.isInteger(parentStudentId) || parentStudentId <= 0) {
+        return bad(res, 'Pilih siswa yang menjadi anak/wali.');
+      }
+
+      const student = await db.prepare('SELECT id FROM students WHERE id = ?').get(parentStudentId);
+      if (!student) {
+        return bad(res, 'Data siswa tidak ditemukan.');
+      }
+    }
+
+    let nis = null;
+    let classId = null;
     if (r === 'siswa') {
-      const nis = str(req.body.nis, 30) || username;
-      const classIdRaw = req.body.class_id;
+      nis = str(body.nis, 30) || username;
+      const classIdRaw = body.class_id;
 
-      let classId = null;
-
-      if (
-        classIdRaw !== undefined &&
-        classIdRaw !== null &&
-        classIdRaw !== '' &&
-        classIdRaw !== 'null'
-      ) {
+      if (classIdRaw !== undefined && classIdRaw !== null && classIdRaw !== '' && classIdRaw !== 'null') {
         const num = Number(classIdRaw);
         if (!isNaN(num) && num > 0) classId = num;
       }
 
       if (classId) {
-        const cek = await db.prepare(
-          'SELECT id FROM classes WHERE id = ?'
-        ).get(classId);
-
+        const cek = await db.prepare('SELECT id FROM classes WHERE id = ?').get(classId);
         if (!cek) {
           return bad(res, 'Kelas tidak ditemukan, refresh halaman dulu.');
         }
       }
+    }
 
-      await insertReturnId(
-        'INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)',
-        [info.lastInsertRowid, nis, classId]
+    const info = await insertReturnId(
+      'INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)',
+      [username, await bcrypt.hash(password, 10), name, r]
+    );
+    createdId = info.lastInsertRowid;
+
+    if (r === 'siswa') {
+      await db.prepare('INSERT INTO students(user_id,nis,class_id) VALUES(?,?,?)')
+        .run(createdId, nis, classId);
+    }
+
+    if (r === 'orang_tua') {
+      await db.prepare(`
+        INSERT INTO parent_student_links
+        (parent_user_id, student_id, relationship)
+        VALUES (?, ?, ?)
+      `).run(
+        createdId,
+        parentStudentId,
+        str(body.relationship, 50) || 'Orang Tua/Wali'
       );
     }
 
-    res.status(201).json({ id: info.lastInsertRowid });
+    res.status(201).json({ id: createdId });
   } catch (e) {
+    // Gagal di tengah jalan (mis. NIS kembar): hapus akun yang sudah terlanjur dibuat
+    if (createdId) {
+      try {
+        await db.batch([
+          ['DELETE FROM students WHERE user_id = ?', [createdId]],
+          ['DELETE FROM parent_student_links WHERE parent_user_id = ?', [createdId]],
+          ['DELETE FROM users WHERE id = ?', [createdId]]
+        ]);
+      } catch (e2) {
+        console.error('Pembersihan akun gagal:', e2);
+      }
+    }
     return handleDb(res, e);
   }
 });
@@ -405,13 +474,16 @@ router.put('/users/:id', async (req, res) => {
     }
 
     if (req.body.active !== undefined) {
-      if (u.id === req.user.id) {
+      if (Number(u.id) === Number(req.user.id)) {
         return bad(res, 'Tidak bisa menonaktifkan akun sendiri.');
       }
 
+      const a = req.body.active;
+      const isActive = a === true || a === 1 || a === '1' || a === 'true';
+
       await db.prepare(
         'UPDATE users SET active = ? WHERE id = ?'
-      ).run(req.body.active ? 1 : 0, u.id);
+      ).run(isActive ? 1 : 0, u.id);
     }
 
     if (req.body.password) {
@@ -421,9 +493,13 @@ router.put('/users/:id', async (req, res) => {
         return bad(res, 'Password minimal 8 karakter.');
       }
 
+      if (pw.length > 72) {
+        return bad(res, 'Password maksimal 72 karakter.');
+      }
+
       await db.prepare(
         'UPDATE users SET password_hash = ?, must_change = 1 WHERE id = ?'
-      ).run(bcrypt.hashSync(pw, 10), u.id);
+      ).run(await bcrypt.hash(pw, 10), u.id);
     }
 
     res.json({ ok: true });
@@ -433,15 +509,74 @@ router.put('/users/:id', async (req, res) => {
 });
 
 router.delete('/users/:id', async (req, res) => {
-  if (Number(req.params.id) === req.user.id) {
-    return bad(res, 'Tidak bisa menghapus akun sendiri.');
-  }
-
   try {
-    await db.prepare(
-      'DELETE FROM users WHERE id = ?'
-    ).run(req.params.id);
+    const id = Number(req.params.id);
 
+    if (!Number.isInteger(id) || id <= 0) {
+      return bad(res, 'ID pengguna tidak valid.');
+    }
+
+    if (id === Number(req.user.id)) {
+      return bad(res, 'Tidak bisa menghapus akun sendiri.');
+    }
+
+    const u = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(id);
+    if (!u) {
+      return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    }
+
+    const tables = await existingTables();
+    const items = [];
+
+    if (u.role === 'guru') {
+      const n = await db.prepare('SELECT COUNT(*) n FROM teaching WHERE teacher_id = ?').get(id);
+      if (Number(n.n) > 0) {
+        return bad(res, 'Guru ini masih mengampu kelas ajar. Hapus atau pindahkan kelas ajarnya dulu, atau cukup nonaktifkan akunnya.');
+      }
+      items.push(['UPDATE classes SET homeroom_teacher_id = NULL WHERE homeroom_teacher_id = ?', [id]]);
+      items.push(['UPDATE extracurriculars SET coach_id = NULL WHERE coach_id = ?', [id]]);
+    }
+
+    const st = await db.prepare('SELECT id FROM students WHERE user_id = ?').get(id);
+    if (st) {
+      const used = await db.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM scores WHERE student_id = ?) +
+          (SELECT COUNT(*) FROM student_attendance WHERE student_id = ?) +
+          (SELECT COUNT(*) FROM spp_invoices WHERE student_id = ?) AS n
+      `).get(st.id, st.id, st.id);
+
+      if (Number(used.n) > 0) {
+        return bad(res, 'Siswa ini sudah punya data nilai, absensi, atau tagihan. Nonaktifkan akunnya, atau luluskan lewat menu Kenaikan Kelas.');
+      }
+
+      items.push(['DELETE FROM parent_student_links WHERE student_id = ?', [st.id]]);
+      items.push(['DELETE FROM extracurricular_members WHERE student_id = ?', [st.id]]);
+      items.push(['DELETE FROM counseling_records WHERE student_id = ?', [st.id]]);
+      if (tables.has('leave_requests')) {
+        items.push(['DELETE FROM leave_requests WHERE student_id = ?', [st.id]]);
+      }
+      if (tables.has('lms_submissions')) {
+        items.push(['DELETE FROM lms_submissions WHERE student_id = ?', [st.id]]);
+      }
+      items.push(['DELETE FROM students WHERE id = ?', [st.id]]);
+    }
+
+    items.push(['DELETE FROM parent_student_links WHERE parent_user_id = ?', [id]]);
+    items.push(['DELETE FROM complaints WHERE user_id = ?', [id]]);
+    items.push(['DELETE FROM visit_log WHERE user_id = ?', [id]]);
+    items.push(['DELETE FROM teacher_attendance WHERE user_id = ?', [id]]);
+    items.push(['DELETE FROM principal_attendance WHERE user_id = ?', [id]]);
+    if (tables.has('notif_state')) {
+      items.push(['DELETE FROM notif_state WHERE user_id = ?', [id]]);
+    }
+    if (tables.has('password_reset_requests')) {
+      items.push(['UPDATE password_reset_requests SET handled_by = NULL WHERE handled_by = ?', [id]]);
+      items.push(['DELETE FROM password_reset_requests WHERE user_id = ?', [id]]);
+    }
+    items.push(['DELETE FROM users WHERE id = ?', [id]]);
+
+    await db.batch(items); // atomik: semua terhapus atau tidak sama sekali
     res.json({ ok: true });
   } catch (e) {
     return handleDb(res, e);
@@ -490,9 +625,23 @@ router.post('/classes', async (req, res) => {
 
 router.delete('/classes/:id', async (req, res) => {
   try {
-    await db.prepare(
-      'DELETE FROM classes WHERE id = ?'
-    ).run(req.params.id);
+    const id = Number(req.params.id);
+
+    const used = await db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM students WHERE class_id = ?) AS siswa,
+        (SELECT COUNT(*) FROM teaching WHERE class_id = ?) AS ajar
+    `).get(id, id);
+
+    if (Number(used.siswa) > 0) {
+      return bad(res, `Kelas ini masih berisi ${Number(used.siswa)} siswa. Pindahkan atau luluskan siswanya dulu.`);
+    }
+
+    if (Number(used.ajar) > 0) {
+      return bad(res, 'Kelas ini masih memiliki kelas ajar. Hapus kelas ajarnya dulu.');
+    }
+
+    await db.prepare('DELETE FROM classes WHERE id = ?').run(id);
 
     res.json({ ok: true });
   } catch (e) {
@@ -515,7 +664,7 @@ router.put('/classes/:id/homeroom', async (req, res) => {
 
     if (tid) {
       const guru = await db.prepare(
-        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND active = 1"
+        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND (active IS NULL OR active = 1)"
       ).get(tid);
 
       if (!guru) {
@@ -565,9 +714,17 @@ router.post('/subjects', async (req, res) => {
 
 router.delete('/subjects/:id', async (req, res) => {
   try {
-    await db.prepare(
-      'DELETE FROM subjects WHERE id = ?'
-    ).run(req.params.id);
+    const id = Number(req.params.id);
+
+    const used = await db.prepare('SELECT COUNT(*) n FROM teaching WHERE subject_id = ?').get(id);
+    if (Number(used.n) > 0) {
+      return bad(res, 'Mata pelajaran ini dipakai oleh kelas ajar. Hapus kelas ajarnya dulu.');
+    }
+
+    await db.batch([
+      ['DELETE FROM outcomes WHERE subject_id = ?', [id]],
+      ['DELETE FROM subjects WHERE id = ?', [id]]
+    ]);
 
     res.json({ ok: true });
   } catch (e) {
@@ -634,6 +791,17 @@ router.post('/teaching', async (req, res) => {
       return bad(res, 'Pengajar harus berperan Guru.');
     }
 
+    const subjOk = await db.prepare('SELECT id FROM subjects WHERE id = ?').get(subject);
+    if (!subjOk) return bad(res, 'Mata pelajaran tidak ditemukan.');
+
+    const classOk = await db.prepare('SELECT id FROM classes WHERE id = ?').get(cls);
+    if (!classOk) return bad(res, 'Kelas tidak ditemukan.');
+
+    const dupe = await db.prepare(
+      'SELECT id FROM teaching WHERE subject_id = ? AND class_id = ? AND teacher_id = ? AND semester = ?'
+    ).get(subject, cls, teacher, semester);
+    if (dupe) return bad(res, 'Kelas ajar yang sama sudah ada pada semester ini.');
+
     const info = await insertReturnId(
       'INSERT INTO teaching(subject_id,class_id,teacher_id,semester,year_id) VALUES(?,?,?,?,?)',
       [subject, cls, teacher, semester, yearId]
@@ -647,10 +815,47 @@ router.post('/teaching', async (req, res) => {
 
 router.delete('/teaching/:id', async (req, res) => {
   try {
-    await db.prepare(
-      'DELETE FROM teaching WHERE id = ?'
-    ).run(req.params.id);
+    const id = Number(req.params.id);
 
+    const t = await db.prepare('SELECT id FROM teaching WHERE id = ?').get(id);
+    if (!t) {
+      return res.status(404).json({ error: 'Kelas ajar tidak ditemukan' });
+    }
+
+    // Riwayat nilai dan absensi dilindungi supaya tidak hilang tanpa sengaja
+    const data = await db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM scores sc
+           JOIN assessments a ON a.id = sc.assessment_id
+          WHERE a.teaching_id = ?) +
+        (SELECT COUNT(*) FROM student_attendance WHERE teaching_id = ?) AS n
+    `).get(id, id);
+
+    if (Number(data.n) > 0) {
+      return bad(res, 'Kelas ajar ini sudah memiliki nilai atau absensi, jadi tidak bisa dihapus agar riwayatnya tidak hilang.');
+    }
+
+    const tables = await existingTables();
+    const items = [
+      ['DELETE FROM assessments WHERE teaching_id = ?', [id]],
+      ['DELETE FROM schedules WHERE teaching_id = ?', [id]],
+      ['DELETE FROM reflections WHERE teaching_id = ?', [id]],
+      ['DELETE FROM attendance_sessions WHERE teaching_id = ?', [id]]
+    ];
+
+    if (tables.has('lms_tasks')) {
+      if (tables.has('lms_submissions')) {
+        items.push(['DELETE FROM lms_submissions WHERE task_id IN (SELECT id FROM lms_tasks WHERE teaching_id = ?)', [id]]);
+      }
+      items.push(['DELETE FROM lms_tasks WHERE teaching_id = ?', [id]]);
+    }
+    if (tables.has('lms_materials')) {
+      items.push(['DELETE FROM lms_materials WHERE teaching_id = ?', [id]]);
+    }
+
+    items.push(['DELETE FROM teaching WHERE id = ?', [id]]);
+
+    await db.batch(items);
     res.json({ ok: true });
   } catch (e) {
     return handleDb(res, e);
@@ -859,10 +1064,11 @@ router.put('/periods/:id/activate', async (req, res) => {
       return res.status(404).json({ error: 'Periode tidak ditemukan' });
     }
 
-    await db.prepare('UPDATE academic_years SET is_active = 0').run();
-    await db.prepare(
-      'UPDATE academic_years SET is_active = 1 WHERE id = ?'
-    ).run(p.id);
+    // Atomik: tidak pernah ada kondisi "tanpa periode aktif" di tengah proses
+    await db.batch([
+      ['UPDATE academic_years SET is_active = 0', []],
+      ['UPDATE academic_years SET is_active = 1 WHERE id = ?', [Number(p.id)]]
+    ]);
 
     res.json({ ok: true });
   } catch (e) {
@@ -1035,8 +1241,8 @@ router.post('/users/import', async (req, res) => {
         continue;
       }
 
-      if (password.length < 8) {
-        fail('Password minimal 8 karakter.');
+      if (password.length < 8 || password.length > 72) {
+        fail('Password harus 8-72 karakter.');
         continue;
       }
 
@@ -1064,7 +1270,7 @@ router.post('/users/import', async (req, res) => {
       try {
         info = await insertReturnId(
           'INSERT INTO users(username,password_hash,name,role,must_change) VALUES(?,?,?,?,1)',
-          [username, bcrypt.hashSync(password, 10), name, r]
+          [username, await bcrypt.hash(password, 10), name, r]
         );
 
         if (r === 'siswa') {
@@ -1073,12 +1279,14 @@ router.post('/users/import', async (req, res) => {
             [info.lastInsertRowid, nisRaw || username, classId]
           );
         }
-
         created++;
       } catch (e) {
         if (info && info.lastInsertRowid) {
           try {
-            await db.prepare('DELETE FROM users WHERE id = ?').run(info.lastInsertRowid);
+            await db.batch([
+              ['DELETE FROM students WHERE user_id = ?', [info.lastInsertRowid]],
+              ['DELETE FROM users WHERE id = ?', [info.lastInsertRowid]]
+            ]);
           } catch (e2) {
             console.error(e2);
           }

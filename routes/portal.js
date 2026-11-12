@@ -20,6 +20,10 @@ const todayStr = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
 const clip = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
 const fail = (res, e, msg) => { console.error(e); res.status(500).json({ error: msg }); };
 const bad = (res, msg) => res.status(400).json({ error: msg });
+// Batas ukuran gambar. Vercel menolak isi permintaan di atas ~4,5 MB, dan base64
+// menambah ukuran sekitar sepertiga, jadi 3 MB adalah batas yang aman.
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
 function validImageDataUrl(value) {
   if (typeof value !== 'string') return false;
 
@@ -31,8 +35,7 @@ function validImageDataUrl(value) {
 
   const buffer = Buffer.from(match[2], 'base64');
 
-  // Maksimal ukuran foto 1 MB
- if (!buffer.length || buffer.length > 5 * 1024 * 1024) return false;
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return false;
 
   const type = match[1];
 
@@ -124,8 +127,9 @@ router.put('/pengaduan/:id', role('admin', 'kepsek'), async (req, res) => {
     const response = clip(req.body.response, 1000);
     if (!COMPLAINT_STATUS.includes(status)) return bad(res, 'Status tidak valid');
     if ((status === 'selesai' || status === 'ditolak') && response.length < 3) return bad(res, 'Isi tanggapan terlebih dahulu');
+    // COALESCE: mengubah status tanpa mengetik tanggapan baru tidak menghapus tanggapan sebelumnya
     const r = await db.prepare(
-      'UPDATE complaints SET status = ?, response = ?, responded_by = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?'
+      'UPDATE complaints SET status = ?, response = COALESCE(?, response), responded_by = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?'
     ).run(status, response || null, req.user.id, Number(req.params.id));
     if (!r.changes) return res.status(404).json({ error: 'Pengaduan tidak ditemukan' });
     res.json({ ok: true });
@@ -264,7 +268,7 @@ router.post('/ekskul', role('admin'), async (req, res) => {
 
     if (coachId) {
       const coach = await db.prepare(
-        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND active = 1"
+        "SELECT id FROM users WHERE id = ? AND role = 'guru' AND (active IS NULL OR active = 1)"
       ).get(coachId);
 
       if (!coach) return bad(res, 'Pembina tidak ditemukan');
@@ -580,27 +584,35 @@ router.post('/keuangan/:id/bayar', role('admin'), async (req, res) => {
       return bad(res, 'Pembayaran melebihi sisa tagihan');
     }
 
-    await db.prepare(`
-      INSERT INTO spp_payments
-      (invoice_id, amount, payment_date, method, note, recorded_by)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      invoiceId,
-      amount,
-      paymentDate,
-      method,
-      note || null,
-      req.user.id
-    );
+    // Atomik: sisa tagihan diperiksa ulang di dalam perintah INSERT itu sendiri,
+    // jadi dua pembayaran bersamaan tidak bisa sama-sama lolos dan melebihi tagihan.
+    const result = await db.batch([
+      [
+        `INSERT INTO spp_payments
+         (invoice_id, amount, payment_date, method, note, recorded_by)
+         SELECT ?, ?, ?, ?, ?, ?
+         WHERE (SELECT i.amount FROM spp_invoices i WHERE i.id = ?)
+               - COALESCE((SELECT SUM(p.amount) FROM spp_payments p WHERE p.invoice_id = ?), 0) >= ?`,
+        [invoiceId, amount, paymentDate, method, note || null, req.user.id, invoiceId, invoiceId, amount]
+      ],
+      [
+        `UPDATE spp_invoices
+         SET status = CASE
+           WHEN COALESCE((SELECT SUM(amount) FROM spp_payments WHERE invoice_id = spp_invoices.id), 0) >= amount
+           THEN 'lunas' ELSE 'belum_lunas' END
+         WHERE id = ?`,
+        [invoiceId]
+      ]
+    ]);
+
+    if (!result[0].changes) {
+      return bad(res, 'Pembayaran melebihi sisa tagihan atau tagihan sudah lunas');
+    }
 
     const newPaid = Number(paid.total) + amount;
     const status = newPaid >= Number(invoice.amount)
       ? 'lunas'
       : 'belum_lunas';
-
-    await db.prepare(`
-      UPDATE spp_invoices SET status = ? WHERE id = ?
-    `).run(status, invoiceId);
 
     res.json({
       ok: true,
@@ -720,6 +732,31 @@ router.get('/keuangan/laporan', role('admin', 'kepsek'), async (req, res) => {
     fail(res, e, 'Gagal memuat laporan keuangan');
   }
 });
+/* ======================= PORTAL ORANG TUA ======================= */
+
+// Orang tua hanya dapat melihat siswa yang terhubung dengan akunnya
+router.get('/orang-tua/anak', role('orang_tua'), async (req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT
+        s.id AS student_id,
+        u.name,
+        s.nis,
+        c.name AS class_name,
+        psl.relationship
+      FROM parent_student_links psl
+      JOIN students s ON s.id = psl.student_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON c.id = s.class_id
+      WHERE psl.parent_user_id = ?
+      ORDER BY u.name
+    `).all(req.user.id);
+
+    res.json(rows);
+  } catch (e) {
+    fail(res, e, 'Gagal memuat data anak');
+  }
+});
 /* ================================ AKUN ================================ */
 
 router.get('/akun', async (req, res) => {
@@ -754,7 +791,7 @@ router.put('/akun/foto', async (req, res) => {
     const image = req.body.image;
 
     if (!validImageDataUrl(image)) {
-      return bad(res, 'Foto tidak valid. Gunakan JPG, PNG, atau WEBP maksimal 1 MB.');
+      return bad(res, 'Foto tidak valid. Gunakan JPG, PNG, atau WEBP maksimal 3 MB.');
     }
 
     await db.prepare(
@@ -798,12 +835,10 @@ router.post('/keuangan/saya/:id/bukti', role('siswa'), async (req, res) => {
       return bad(res, 'Nominal pembayaran tidak valid');
     }
 
-   if (
-  !validImageDataUrl(proof) ||
-  proof.length > 6 * 1024 * 1024
-) {
-  return bad(res, 'Bukti harus berupa gambar JPG, PNG, atau WEBP maksimal 5 MB');
-}
+    if (!validImageDataUrl(proof)) {
+      return bad(res, 'Bukti harus berupa gambar JPG, PNG, atau WEBP maksimal 3 MB');
+    }
+
     const student = await db.prepare(
       'SELECT id FROM students WHERE user_id = ?'
     ).get(req.user.id);
@@ -876,6 +911,7 @@ router.get('/keuangan/bukti', role('admin', 'kepsek'), async (req, res) => {
       ORDER BY
         CASE WHEN p.status = 'menunggu' THEN 0 ELSE 1 END,
         p.id DESC
+      LIMIT 100
     `).all();
 
     res.json({ rows });

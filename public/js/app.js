@@ -5,9 +5,19 @@
   const esc = (v) =>
     String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (n) => (n == null ? '-' : Number(n).toFixed(1));
-  const fdate = (s) =>
-    new Date(String(s).replace(' ', 'T') + 'Z').toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-  const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah' }[r] || r);
+  const fdate = (s) => {
+    if (s == null || s === '') return '-';
+    const t = String(s).trim();
+    let iso;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) iso = t + 'T00:00:00';            // tanggal saja: waktu setempat
+    else if (/(Z|[+-]\d{2}:?\d{2})$/i.test(t) && t.includes('T')) iso = t; // sudah bertanda zona
+    else iso = t.replace(' ', 'T') + 'Z';                                  // dari database: UTC
+    const d = new Date(iso);
+    return isNaN(d.getTime())
+      ? '-'
+      : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah', orang_tua: 'Orang Tua/Wali' }[r] || r);
 
   async function api(path, method = 'GET', body) {
     const opt = { method, headers: {}, credentials: 'same-origin' };
@@ -73,6 +83,7 @@
       ['jadwal', '🕘 Jadwal Pelajaran'],
       ['news', '📢 Pengumuman'],
       ['absen', '🗓️ Absensi'],
+      ['izin', '📝 Perizinan Siswa'],
       ['monitor', '📊 Monitoring'],
       ['rapor', '🧾 E-Rapor'],
       ['export', '📥 Export Data'],
@@ -92,6 +103,7 @@
       ['wali', '🏫 Wali Kelas'],
       ['lms', '🗂️ Materi & Tugas'],
       ['absen', '🗓️ Absensi'],
+      ['izin', '📝 Perizinan Siswa'],
       ['akademik', '🎓 Akademik'],
       ['pengaduan', '📬 Layanan Pengaduan'],
       ['akun', '👤 Akun']
@@ -101,13 +113,14 @@
       ['report', '📈 Nilai & Capaian'],
       ['lms', '🗂️ Materi & Tugas'],
       ['absen', '🗓️ Absensi Saya'],
+      ['izin', '📝 Perizinan'],
       ['akademik', '🎓 Akademik'],
       ['pengaduan', '📬 Layanan Pengaduan'],
       ['ekskul', '🏅 Ekstrakurikuler'],
       ['keuangan', '💰 Tagihan SPP'],
       ['akun', '👤 Akun']
     ],
-    kepsek: [
+        kepsek: [
       ['dash', '🏠 Dashboard'],
       ['monitor', '📊 Monitoring Capaian'],
       ['rapor', '🧾 E-Rapor'],
@@ -116,6 +129,12 @@
       ['administrasi', '🗂️ Administrasi'],
       ['pengaduan', '📬 Layanan Pengaduan'],
       ['bk', '🧑‍⚕️ Bimbingan Konseling'],
+      ['akun', '👤 Akun']
+    ],
+    orang_tua: [
+      ['dash', '🏠 Dashboard'],
+      ['ortu', '👨‍👩‍👧 Portal Anak'],
+      ['news', '📢 Pengumuman'],
       ['akun', '👤 Akun']
     ]
   };
@@ -262,6 +281,13 @@
 
   async function usersView() {
     const [users, classes] = await Promise.all([api('/admin/users'), api('/admin/classes')]);
+    const studentOpts = users
+  .filter(u => u.role === 'siswa' && u.student_id)
+  .map(u => `
+    <option value="${u.student_id}">
+      ${esc(u.name)} - NIS: ${esc(u.nis || '-')} - Kelas: ${esc(u.class_name || '-')}
+    </option>
+  `).join('');
     const rows = users.map((u) => `<tr>
       <td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${roleLabel(u.role)}</td>
       <td>${esc(u.nis || '')}</td><td>${esc(u.class_name || '')}</td>
@@ -285,10 +311,34 @@
         <form class="form inline" data-form="post" data-url="/admin/users">
           <div class="field"><label>Username</label><input name="username" required></div>
           <div class="field"><label>Nama lengkap</label><input name="name" required></div>
-          <div class="field"><label>Peran</label><select name="role"><option value="siswa">Siswa</option><option value="guru">Guru</option><option value="kepsek">Kepala Sekolah</option><option value="admin">Admin</option></select></div>
+         <div class="field"><label>Peran</label>
+  <select name="role">
+    <option value="siswa">Siswa</option>
+    <option value="guru">Guru</option>
+    <option value="kepsek">Kepala Sekolah</option>
+    <option value="admin">Admin</option>
+    <option value="orang_tua">Orang Tua/Wali</option>
+  </select>
+</div>
           <div class="field"><label>Password awal</label><input name="password" type="password" minlength="8" required></div>
           <div class="field"><label>NIS (siswa)</label><input name="nis"></div>
           <div class="field"><label>Kelas (siswa)</label><select name="class_id">${opts(classes, 'id', (c) => c.name, '-')}</select></div>
+          <div class="field">
+  <label>Anak (khusus Orang Tua/Wali)</label>
+  <select name="student_id">
+    <option value="">-- Pilih siswa --</option>
+    ${studentOpts}
+  </select>
+</div>
+<div class="field">
+  <label>Hubungan dengan siswa</label>
+  <select name="relationship">
+    <option value="Orang Tua">Orang Tua</option>
+    <option value="Ayah">Ayah</option>
+    <option value="Ibu">Ibu</option>
+    <option value="Wali">Wali</option>
+  </select>
+</div>
           <button class="btn" type="submit">Tambah</button>
         </form></div>
       <div class="card"><table><thead><tr><th>Username</th><th>Nama</th><th>Peran</th><th>NIS</th><th>Kelas</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -686,12 +736,13 @@
   }
 
   /* ===================== DASHBOARD (TAHAP 3) ===================== */
-  const QUICK_EXTRA = {
-    admin: [],
-    guru: [['#/absen/siswa', '📝 Absen Siswa'], ['#/absen/saya', '🙋 Absen Masuk']],
-    siswa: [],
-    kepsek: [['#/absen/saya', '🙋 Absen Masuk']]
-  };
+const QUICK_EXTRA = {
+  admin: [],
+  guru: [['#/absen/siswa', '📝 Absen Siswa'], ['#/absen/saya', '🙋 Absen Masuk']],
+  siswa: [],
+  kepsek: [['#/absen/saya', '🙋 Absen Masuk']],
+  orang_tua: []
+};
   const VISIT_LABEL = { class: '📚 Kelas Ajar', detail: '📊 Detail Monitoring' };
   const splitIcon = (label) => { const i = label.indexOf(' '); return i < 0 ? ['•', label] : [label.slice(0, i), label.slice(i + 1)]; };
   const ago = (s) => {
@@ -991,8 +1042,6 @@
 
   async function lmsView(id, tab, extra) {
     const guru = me.role === 'guru';
-    console.log('ROLE LOGIN:', me.role);
-console.log('STATUS GURU:', guru);
 
     if (!id) {
       const d = await api('/lms/teachings');
@@ -1009,38 +1058,38 @@ console.log('STATUS GURU:', guru);
     if (guru && tab === 'tugas' && extra) {
       const d = await api(`/lms/tasks/${extra}/submissions`);
       const done = d.rows.filter((r) => r.submitted_at).length;
-     
-const rows = d.rows.length
-  ? d.rows.map((r) => `<tr>
-      <td>${esc(r.nis || '')}</td>
-      <td>${esc(r.name)}</td>
-      <td>${r.submitted_at ? (r.late ? '<span class="pill warn">Terlambat</span>' : '<span class="pill ok">Terkumpul</span>') : '<span class="pill na">Belum</span>'}</td>
-      <td class="small">${r.submitted_at ? esc(fdateTime(r.submitted_at)) : '-'}</td>
-      <td>${lmsText(r.answer)}${lmsLink(r.link)}</td>
-      <td>
-        ${r.submitted_at ? `
-          <form class="form" data-form="gradeLms" data-task="${extra}" style="min-width:170px">
-            <input type="hidden" name="student_id" value="${r.student_id}">
-            <div class="field">
-              <label>Nilai (0–100)</label>
-              <input type="number" name="score" min="0" max="100" step="1" required value="${r.score ?? ''}">
-            </div>
-            <div class="field">
-              <label>Komentar guru</label>
-              <textarea name="feedback" maxlength="1000">${esc(r.feedback || '')}</textarea>
-            </div>
-            <button class="btn sm" type="submit">Simpan Penilaian</button>
-          </form>
-          ${r.score != null ? `<p class="small muted">Nilai tersimpan: ${r.score}/100</p>` : '<p class="small muted">Belum dinilai</p>'}
-        ` : '<span class="muted small">Belum bisa dinilai</span>'}
-      </td>
-    </tr>`).join('')
-  : '<tr><td colspan="6" class="muted">Belum ada siswa di kelas ini.</td></tr>';
-
+      const graded = d.rows.filter((r) => r.graded_at).length;
+      const maxS = d.task.max_score || 100;
+      const rows = d.rows.length
+        ? d.rows.map((r) => {
+            const statusPill = r.submitted_at
+              ? (r.late ? '<span class="pill warn">Terlambat</span>' : '<span class="pill ok">Terkumpul</span>')
+              : '<span class="pill na">Belum</span>';
+            const gradePill = r.graded_at ? ' <span class="pill info">Dinilai</span>' : '';
+            const inputs = r.submitted_at
+              ? `<input class="grade-score" type="number" min="0" max="${maxS}" step="any" data-sid="${r.student_id}" value="${r.score ?? ''}" style="width:80px">`
+              : '<span class="muted small">-</span>';
+            const fb = r.submitted_at
+              ? `<input class="grade-note" maxlength="1000" data-sid="${r.student_id}" placeholder="Komentar untuk siswa" value="${esc(r.feedback || '')}" style="width:100%;min-width:180px">`
+              : '';
+            return `<tr data-gsid="${r.student_id}"><td>${esc(r.nis || '')}</td><td>${esc(r.name)}</td>
+              <td>${statusPill}${gradePill}</td>
+              <td class="small">${r.submitted_at ? esc(fdateTime(r.submitted_at)) : '-'}</td>
+              <td>${lmsText(r.answer)}${lmsLink(r.link)}</td>
+              <td class="num">${inputs}</td><td>${fb}</td></tr>`;
+          }).join('')
+        : '<tr><td colspan="7" class="muted">Belum ada siswa di kelas ini.</td></tr>';
+      const asm = d.assessment
+        ? `<p class="muted small">Terhubung ke asesmen <b>${esc(d.assessment.name)}</b>${d.assessment.outcome_code ? ' (' + esc(d.assessment.outcome_code) + ')' : ''}. Nilai otomatis masuk ke nilai akhir OBE dan E-Rapor, diskalakan ke maks. ${esc(d.assessment.max_score)}.</p>`
+        : '<p class="muted small">Tugas ini belum terhubung ke asesmen OBE, jadi nilainya tidak masuk nilai akhir.</p>';
       return `<p><a href="#/lms/${id}" class="btn sm ghost">&larr; Kembali</a></p>
         <h1>${esc(d.task.title)}</h1>
-        <p class="muted">${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}${d.task.due_date ? ' &bull; Tenggat ' + fdate2(d.task.due_date) : ''} &bull; ${done} dari ${d.rows.length} siswa sudah mengumpulkan</p>
-        <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Waktu</th><th>Jawaban</th><th>Penilaian</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        <p class="muted">${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}${d.task.due_date ? ' &bull; Tenggat ' + fdate2(d.task.due_date) : ''} &bull; ${done} dari ${d.rows.length} siswa sudah mengumpulkan &bull; ${graded} dinilai</p>
+        <div class="card"><p class="small" style="margin-bottom:.4rem">Nilai maksimal tugas: <b>${maxS}</b>. Siswa yang sudah dinilai tidak bisa mengirim ulang. Kosongkan nilai dan komentar untuk membatalkan penilaian.</p>${asm}</div>
+        <form data-form="saveGrades" data-tid="${esc(d.task.id)}">
+          <div class="card"><div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Waktu</th><th>Jawaban</th><th class="num">Nilai (0-${maxS})</th><th>Komentar</th></tr></thead><tbody>${rows}</tbody></table></div>
+          ${done ? '<div class="actions" style="margin-top:1rem"><button class="btn" type="submit">Simpan Semua Nilai</button></div>' : ''}</div>
+        </form>`;
     }
 
     const d = await api('/lms/teaching/' + id);
@@ -1057,8 +1106,13 @@ const rows = d.rows.length
       const tasks = d.tasks.length
         ? d.tasks.map((k) => `<div class="news"><h3>${esc(k.title)}</h3>
             <time>${fdate(k.created_at)}${k.due_date ? ' &bull; Tenggat ' + fdate2(k.due_date) : ''}</time>${lmsText(k.instructions)}${lmsLink(k.link)}
-            <div class="actions" style="margin-top:.5rem"><a class="btn sm ghost" href="#/lms/${id}/tugas/${k.id}">Lihat pengumpulan (${k.submitted}/${k.total})</a>${delBtn('/lms/tasks/' + k.id)}</div></div>`).join('')
+            <p class="muted small">Nilai maks. ${k.max_score || 100} &bull; ${k.graded || 0} dari ${k.submitted} jawaban sudah dinilai${k.assessment_id ? ' &bull; masuk nilai akhir' : ''}</p>
+            <div class="actions" style="margin-top:.5rem"><a class="btn sm ghost" href="#/lms/${id}/tugas/${k.id}">Lihat &amp; nilai pengumpulan (${k.submitted}/${k.total})</a>${delBtn('/lms/tasks/' + k.id)}</div></div>`).join('')
         : '<p class="muted">Belum ada tugas.</p>';
+      let asmList = [];
+      try { asmList = await api(`/guru/teaching/${id}/assessments`); } catch (e) { asmList = []; }
+      const asmOpts = '<option value="">Tidak dihubungkan</option>' + asmList
+        .map((a) => `<option value="${esc(a.id)}">${esc(a.name)}${a.outcome_code ? ' (' + esc(a.outcome_code) + ')' : ''} - maks. ${esc(a.max_score)}</option>`).join('');
       return head + `
         <div class="grid2">
           <div class="card"><h2>Bagikan Materi</h2><form class="form" data-form="post" data-url="/lms/teaching/${id}/materials">
@@ -1071,6 +1125,9 @@ const rows = d.rows.length
             <div class="field"><label>Petunjuk</label><textarea name="instructions" required maxlength="3000"></textarea></div>
             <div class="field"><label>Tenggat (opsional)</label><input name="due_date" type="date"></div>
             <div class="field"><label>Tautan lampiran (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://"></div>
+            <div class="field"><label>Nilai maksimal</label><input name="max_score" type="number" min="1" max="1000" value="100"></div>
+            <div class="field"><label>Hubungkan ke asesmen OBE (opsional)</label><select name="assessment_id">${asmOpts}</select>
+              <span class="muted small">Bila dihubungkan, nilai tugas otomatis masuk ke nilai akhir dan E-Rapor. Satu asesmen hanya untuk satu tugas. Buat asesmen dulu di menu Kelas Ajar Saya &rarr; Penilaian.</span></div>
             <div><button class="btn" type="submit">Buat Tugas</button></div></form></div>
         </div>
         <div class="card"><h2>📚 Materi</h2>${materials}</div>
@@ -1086,26 +1143,86 @@ const rows = d.rows.length
           return `<div class="news"><div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(k.title)}</h3><span>${status}</span></div>
             <time>${k.due_date ? 'Tenggat ' + fdate2(k.due_date) : 'Tanpa tenggat'}</time>${lmsText(k.instructions)}${lmsLink(k.link)}
             ${k.my_at ? `<p class="muted small">Terakhir dikirim: ${esc(fdateTime(k.my_at))}</p>` : ''}
-            
-${k.my_at ? `
-  <div class="card" style="margin:.6rem 0">
-    <b>📊 Hasil Penilaian</b>
-    ${k.my_score != null
-      ? `<h2>Nilai: ${k.my_score}/100</h2>`
-      : '<p class="muted">Belum dinilai oleh guru.</p>'}
-    ${k.my_feedback
-      ? `<p><b>Komentar guru:</b><br>${esc(k.my_feedback)}</p>`
-      : ''}
-  </div>
-` : ''}
-
-            <form class="form" data-form="post" data-url="/lms/tasks/${k.id}/submit" style="margin-top:.6rem">
+            ${k.my_graded_at ? `<div style="margin:.6rem 0;padding:.8rem 1rem;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46">
+                <b>Nilai: ${esc(k.my_score)} / ${esc(k.max_score || 100)}</b>
+                ${k.my_feedback ? `<p style="margin-top:.3rem;white-space:pre-wrap">💬 ${esc(k.my_feedback)}</p>` : ''}
+                <p class="small" style="margin-top:.3rem">Dinilai ${esc(fdateTime(k.my_graded_at))}. Tugas ini sudah dikunci.</p></div>`
+              : (k.my_feedback ? `<div style="margin:.6rem 0;padding:.8rem 1rem;border-radius:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e"><b>Komentar guru:</b><p style="margin-top:.3rem;white-space:pre-wrap">${esc(k.my_feedback)}</p></div>` : '')}
+            ${k.my_graded_at ? '' : `<form class="form" data-form="post" data-url="/lms/tasks/${k.id}/submit" style="margin-top:.6rem">
               <div class="field"><label>Jawaban</label><textarea name="answer" maxlength="3000">${esc(k.my_answer || '')}</textarea></div>
               <div class="field"><label>Tautan jawaban (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://" value="${esc(k.my_link || '')}"></div>
-              <div><button class="btn" type="submit">${k.my_at ? 'Kirim Ulang' : 'Kumpulkan'}</button></div></form></div>`;
+              <div><button class="btn" type="submit">${k.my_at ? 'Kirim Ulang' : 'Kumpulkan'}</button></div></form>`}</div>`;
         }).join('')
       : '<p class="muted">Belum ada tugas.</p>';
     return head + `<div class="card"><h2>📚 Materi</h2>${materials}</div><div class="card"><h2>📝 Tugas</h2>${tasks}</div>`;
+  }
+
+  /* ===================== PERIZINAN SISWA ===================== */
+  const IZIN_TYPE = { izin: 'Izin', sakit: 'Sakit' };
+  const IZIN_CLASS = { menunggu: 'warn', disetujui: 'ok', ditolak: 'low' };
+  const IZIN_LABEL = { menunggu: 'Menunggu', disetujui: 'Disetujui', ditolak: 'Ditolak' };
+  const izinPill = (s) => `<span class="pill ${IZIN_CLASS[s] || 'na'}">${esc(IZIN_LABEL[s] || s)}</span>`;
+
+  async function izinView(sub = 'menunggu') {
+    // ---------- Siswa ----------
+    if (me.role === 'siswa') {
+      const d = await api('/izin/saya');
+      const list = d.rows.length
+        ? d.rows.map((r) => `<div class="news">
+            <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(IZIN_TYPE[r.type] || r.type)} &bull; ${rangeTxt(r.start_date, r.end_date)}</h3>${izinPill(r.status)}</div>
+            <time>Diajukan ${fdate(r.created_at)}</time>
+            <p>${esc(r.reason)}</p>${lmsLink(r.link)}
+            ${r.review_note ? `<p class="muted small" style="margin-top:.4rem"><b>Catatan wali kelas:</b> ${esc(r.review_note)}</p>` : ''}
+            ${r.status === 'menunggu' ? `<button class="btn sm danger" data-action="del" data-url="/izin/${r.id}" style="margin-top:.5rem">Batalkan Pengajuan</button>` : ''}
+          </div>`).join('')
+        : '<p class="muted">Belum ada pengajuan izin.</p>';
+      return `<h1>Perizinan</h1>
+        <p class="muted">Ajukan izin atau sakit kepada wali kelas. Setelah disetujui, absensi Anda otomatis tercatat Izin atau Sakit pada hari yang ada pelajarannya.</p>
+        <div class="card"><h2>Ajukan Izin</h2>
+          <form class="form" data-form="post" data-url="/izin">
+            <div class="field"><label>Jenis</label><select name="type"><option value="izin">Izin</option><option value="sakit">Sakit</option></select></div>
+            <div class="field"><label>Tanggal mulai</label><input name="start_date" type="date" value="${esc(d.today)}" required></div>
+            <div class="field"><label>Tanggal selesai</label><input name="end_date" type="date" value="${esc(d.today)}" required></div>
+            <div class="field"><label>Alasan</label><textarea name="reason" required minlength="5" maxlength="500"></textarea></div>
+            <div class="field"><label>Tautan surat / bukti (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://"></div>
+            <p class="muted small">Satu pengajuan maksimal 14 hari.</p>
+            <div><button class="btn" type="submit">Kirim Pengajuan</button></div>
+          </form></div>
+        <div class="card"><h2>Riwayat Pengajuan</h2>${list}</div>`;
+    }
+
+    // ---------- Wali kelas & admin ----------
+    const status = ['menunggu', 'disetujui', 'ditolak'].includes(sub) ? sub : 'menunggu';
+    const d = await api('/izin/masuk?status=' + status);
+    if (me.role === 'guru' && !d.wali) {
+      return '<h1>Perizinan Siswa</h1><div class="card"><p class="muted">Menu ini untuk wali kelas. Anda belum ditetapkan sebagai wali kelas. Hubungi admin.</p></div>';
+    }
+    const tabs = absenTabsFor('izin', [
+      ['menunggu', `Menunggu (${d.counts.menunggu})`],
+      ['disetujui', `Disetujui (${d.counts.disetujui})`],
+      ['ditolak', `Ditolak (${d.counts.ditolak})`]
+    ], status);
+    const rows = d.rows.length
+      ? d.rows.map((r) => {
+          const aksi = r.status === 'menunggu'
+            ? `<button class="btn sm" data-action="reviewIzin" data-id="${r.id}" data-status="disetujui">Setujui</button>
+               <button class="btn sm danger" data-action="reviewIzin" data-id="${r.id}" data-status="ditolak">Tolak</button>`
+            : r.status === 'disetujui'
+              ? `<button class="btn sm danger" data-action="reviewIzin" data-id="${r.id}" data-status="ditolak">Batalkan Persetujuan</button>`
+              : `<button class="btn sm ghost" data-action="reviewIzin" data-id="${r.id}" data-status="disetujui">Setujui</button>`;
+          return `<tr><td class="small">${fdate(r.created_at)}</td>
+            <td><b>${esc(r.name)}</b><br><span class="muted small">${esc(r.nis || '')} &bull; ${esc(r.class_name || '-')}</span></td>
+            <td><span class="pill ${r.type === 'sakit' ? 'info' : 'na'}">${esc(IZIN_TYPE[r.type] || r.type)}</span></td>
+            <td>${rangeTxt(r.start_date, r.end_date)}</td>
+            <td>${esc(r.reason)}${r.link ? '<br>' + lmsLink(r.link) : ''}${r.review_note ? `<br><span class="muted small">Catatan: ${esc(r.review_note)}</span>` : ''}</td>
+            <td>${izinPill(r.status)}</td>
+            <td><div class="actions">${aksi}</div></td></tr>`;
+        }).join('')
+      : '<tr><td colspan="7" class="muted">Tidak ada pengajuan.</td></tr>';
+    return `<h1>Perizinan Siswa</h1>
+      <p class="muted">${me.role === 'admin' ? 'Semua kelas.' : 'Siswa kelas perwalian Anda.'} Izin yang disetujui otomatis mengisi absensi siswa pada hari berjadwal. Siswa yang sudah absen hadir sendiri pada hari itu tidak ditimpa.</p>
+      ${tabs}
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Diajukan</th><th>Siswa</th><th>Jenis</th><th>Tanggal</th><th>Alasan</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
   /* ===================== PENCARIAN GLOBAL (FITUR 9) ===================== */
@@ -1947,7 +2064,37 @@ async function keuanganView() {
       `;
     }
   }
+async function orangTuaView() {
+  try {
+    const data = await api('/portal/orang-tua/anak');
 
+    if (!data || !data.length) {
+      return `
+        <div class="card">
+          <h2>👨‍👩‍👧 Portal Anak</h2>
+          <p>Belum ada data siswa yang terhubung dengan akun ini.</p>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="page-head">
+        <h2>👨‍👩‍👧 Portal Anak</h2>
+        <p>Pantau informasi pendidikan anak Anda.</p>
+      </div>
+
+      ${data.map(s => `
+        <div class="card" style="margin-bottom:1rem">
+          <h3>${esc(s.name || '-')}</h3>
+          <p>NIS: ${esc(s.nis || '-')}</p>
+          <p>Kelas: ${esc(s.class_name || '-')}</p>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    throw e;
+  }
+}
   // ================= DAFTAR TAMPILAN =================
 
   const VIEWS = {
@@ -1958,7 +2105,7 @@ async function keuanganView() {
       log: logView, backup: backupView,
       subjects: subjectsView, teaching: teachingAdminView,
       news: newsView, jadwal: jadwalAdminView,
-      absen: absenPantau, akademik: akademikView,
+      absen: absenPantau, akademik: akademikView, izin: izinView,
       administrasi: administrasiView, pengaduan: pengaduanView,
       akun: akunView, monitor: monitorView,
       reset: resetView, detail: detailView,
@@ -1969,24 +2116,30 @@ async function keuanganView() {
     guru: {
       dash, mycls: myClasses, wali: waliView,
       lms: lmsView, class: classDetail,
-      absen: absenGuru, akademik: akademikView,
+      absen: absenGuru, akademik: akademikView, izin: izinView,
       pengaduan: pengaduanView, akun: akunView
     },
 
     siswa: {
       dash, report: reportView, lms: lmsView,
-      absen: absenSiswa, akademik: akademikView,
+      absen: absenSiswa, akademik: akademikView, izin: izinView,
       pengaduan: pengaduanView, akun: akunView,
       ekskul: ekskulView,
       keuangan: keuanganSiswaView
     },
-
     kepsek: {
       dash, rapor: raporAdminView,
       monitor: monitorView, detail: detailView,
       absen: absenPantau, akademik: akademikView,
       administrasi: administrasiView,
       pengaduan: pengaduanView, bk: bkView,
+      akun: akunView
+    },
+
+    orang_tua: {
+      dash,
+      ortu: orangTuaView,
+      news: newsView,
       akun: akunView
     }
   };
@@ -2072,17 +2225,6 @@ async function keuanganView() {
         else toast(e.message, false);
       }
     },
-
-async gradeLms(data, f) {
-  await api(`/lms/tasks/${f.dataset.task}/grade`, 'POST', {
-    student_id: Number(data.student_id),
-    score: Number(data.score),
-    feedback: data.feedback
-  });
-
-  toast('Penilaian berhasil disimpan');
-  route();
-},
 
     async changePw(data, f) {
       const msg = f.querySelector('.form-msg');
@@ -2240,8 +2382,8 @@ async gradeLms(data, f) {
         throw new Error('Format foto harus JPG, PNG, atau WEBP.');
       }
 
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Ukuran foto maksimal 5 MB.');
+      if (file.size > 3 * 1024 * 1024) {
+        throw new Error('Ukuran foto maksimal 3 MB.');
       }
 
       const image = await new Promise((resolve, reject) => {
@@ -2365,6 +2507,25 @@ async gradeLms(data, f) {
     async post(data, f) {
       await api(f.dataset.url, 'POST', data);
       toast('Data tersimpan');
+      route();
+    },
+
+    async saveGrades(data, f) {
+      const grades = [...f.querySelectorAll('tr[data-gsid]')]
+        .map((tr) => {
+          const sc = tr.querySelector('.grade-score');
+          const nt = tr.querySelector('.grade-note');
+          if (!sc) return null; // siswa belum mengumpulkan
+          return {
+            student_id: Number(tr.dataset.gsid),
+            score: sc.value === '' ? null : Number(sc.value),
+            feedback: nt ? nt.value.trim() : ''
+          };
+        })
+        .filter(Boolean);
+
+      await api(`/lms/tasks/${f.dataset.tid}/grades`, 'PUT', { grades });
+      toast('Nilai tugas tersimpan');
       route();
     },
 
@@ -2612,8 +2773,7 @@ async verifikasiBuktiSPP(el) {
     },
 
     async absenMandiri(el) {
-      // TEBAKAN: POST /absensi/siswa/mandiri
-      await api('/absensi/siswa/mandiri', 'POST', {
+      await api('/absensi/siswa/absen', 'POST', {
         session_id: Number(el.dataset.id)
       });
       toast('Absensi berhasil dicatat');
@@ -2690,6 +2850,35 @@ async verifikasiBuktiSPP(el) {
       // TEBAKAN: DELETE /portal/akun/foto
       await api('/portal/akun/foto', 'DELETE');
       toast('Foto profil dihapus');
+      route();
+    },
+
+    // ---------- Perizinan siswa ----------
+
+    async reviewIzin(el) {
+      const id = Number(el.dataset.id);
+      const status = el.dataset.status;
+
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new Error('ID pengajuan tidak valid.');
+      }
+      if (!['disetujui', 'ditolak'].includes(status)) {
+        throw new Error('Status tidak valid.');
+      }
+
+      let note = '';
+      if (status === 'disetujui') {
+        if (!confirm('Setujui izin ini? Absensi siswa akan otomatis terisi pada hari yang ada jadwalnya.')) return;
+      } else {
+        const n = prompt('Alasan penolakan atau pembatalan (boleh dikosongkan):');
+        if (n === null) return;
+        note = n.trim();
+      }
+
+      const r = await api(`/izin/${id}/review`, 'PUT', { status, note });
+      toast(status === 'disetujui'
+        ? `Izin disetujui. ${r.attendance || 0} catatan absensi dibuat.`
+        : 'Izin ditolak atau dibatalkan.');
       route();
     },
 
@@ -2922,8 +3111,8 @@ async uploadBuktiSPP(el) {
     throw new Error('Format bukti harus JPG, PNG, atau WEBP.');
   }
 
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error('Ukuran bukti maksimal 5 MB.');
+  if (file.size > 3 * 1024 * 1024) {
+    throw new Error('Ukuran bukti maksimal 3 MB.');
   }
 
   const proof = await new Promise((resolve, reject) => {

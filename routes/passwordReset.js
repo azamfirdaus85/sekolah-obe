@@ -63,7 +63,7 @@ router.post('/request', requestLimiter, async (req, res) => {
       FROM users
       WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))
         AND LOWER(TRIM(email)) = ?
-        AND active = 1
+        AND (active IS NULL OR active = 1)
       LIMIT 1
     `).get(username, email);
 
@@ -175,20 +175,36 @@ router.post('/admin/:id/approve', auth, role('admin'), async (req, res) => {
 
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
 
-    await db.prepare(`
-      UPDATE users
-      SET password_hash = ?,
-          must_change = 1
-      WHERE id = ?
-    `).run(passwordHash, request.user_id);
+    // Satu transaksi: password hanya diganti kalau permintaan ini MASIH pending.
+    // Klik ganda tidak akan menimpa password sementara yang sudah ditampilkan.
+    const result = await db.batch([
+      [
+        `UPDATE users
+         SET password_hash = ?,
+             must_change = 1
+         WHERE id = ?
+           AND EXISTS (
+             SELECT 1 FROM password_reset_requests
+             WHERE id = ? AND status = 'pending'
+           )`,
+        [passwordHash, request.user_id, id]
+      ],
+      [
+        `UPDATE password_reset_requests
+         SET status = 'approved',
+             handled_at = CURRENT_TIMESTAMP,
+             handled_by = ?
+         WHERE id = ? AND status = 'pending'`,
+        [req.user.id, id]
+      ]
+    ]);
 
-    await db.prepare(`
-      UPDATE password_reset_requests
-      SET status = 'approved',
-          handled_at = CURRENT_TIMESTAMP,
-          handled_by = ?
-      WHERE id = ?
-    `).run(req.user.id, id);
+    if (!result[1].changes) {
+      return res.status(404).json({
+        success: false,
+        message: 'Permintaan tidak ditemukan atau sudah diproses.'
+      });
+    }
 
     return res.json({
       success: true,

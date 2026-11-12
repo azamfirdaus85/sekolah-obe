@@ -272,6 +272,15 @@ const NEW_TABLES = [
     reviewed_by INTEGER,
     reviewed_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+    // Hubungan akun orang tua dengan siswa
+  `CREATE TABLE IF NOT EXISTS parent_student_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_user_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    relationship TEXT DEFAULT 'Orang Tua/Wali',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (parent_user_id, student_id)
   )`
 ];
 /* =====================================================
@@ -305,34 +314,48 @@ const NEW_INDEXES = [
    ON spp_invoices (student_id)`,
 
   `CREATE INDEX IF NOT EXISTS idx_spp_payment_invoice
-   ON spp_payments (invoice_id)`
+   ON spp_payments (invoice_id)`,
+     `CREATE INDEX IF NOT EXISTS idx_parent_student_parent
+   ON parent_student_links (parent_user_id)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_parent_student_student
+   ON parent_student_links (student_id)`
 ];
 
 /* =====================================================
    MIGRASI DATABASE
+   Aman dijalankan berulang kali (idempotent):
+   - kolom hanya ditambah kalau BELUM ada (tidak ada lagi error "duplicate column")
+   - tabel users TIDAK lagi dibangun ulang setiap server start
    ===================================================== */
-const MIGRATIONS = [
-  `ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1`,
-  `ALTER TABLE users ADD COLUMN must_change INTEGER DEFAULT 0`,
-  `ALTER TABLE users ADD COLUMN email TEXT`,
-  `ALTER TABLE users ADD COLUMN phone TEXT`,
-  `ALTER TABLE users ADD COLUMN avatar_data TEXT`,
-  `ALTER TABLE teaching ADD COLUMN year_id INTEGER`,
-  `ALTER TABLE reflections ADD COLUMN created_at TEXT`,
+const COLUMN_ADDS = [
+  ['users', 'active', 'INTEGER DEFAULT 1'],
+  ['users', 'must_change', 'INTEGER DEFAULT 0'],
+  ['users', 'created_at', 'TEXT'],
+  ['users', 'email', 'TEXT'],
+  ['users', 'phone', 'TEXT'],
+  ['users', 'avatar_data', 'TEXT'],
+  ['teaching', 'year_id', 'INTEGER'],
+  ['reflections', 'created_at', 'TEXT'],
 
   // Wali kelas: menyimpan users.id milik guru yang menjadi wali
-  `ALTER TABLE classes ADD COLUMN homeroom_teacher_id INTEGER`,
+  ['classes', 'homeroom_teacher_id', 'INTEGER'],
 
   // Kelulusan: status siswa (aktif / lulus), tanggal lulus, dan kelas terakhir
-  `ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'aktif'`,
-  `ALTER TABLE students ADD COLUMN graduated_at TEXT`,
-  `ALTER TABLE students ADD COLUMN graduated_from TEXT`,
+  ['students', 'status', "TEXT DEFAULT 'aktif'"],
+  ['students', 'graduated_at', 'TEXT'],
+  ['students', 'graduated_from', 'TEXT'],
 
+  // Menghubungkan pembayaran dengan bukti yang diverifikasi
+  ['spp_payments', 'proof_id', 'INTEGER']
+];
+
+const POST_STATEMENTS = [
   `UPDATE users SET active = 1 WHERE active IS NULL`,
   `UPDATE users SET must_change = 0 WHERE must_change IS NULL`,
   `UPDATE reflections SET created_at = datetime('now') WHERE created_at IS NULL`,
 
-    `CREATE TRIGGER IF NOT EXISTS trg_reflections_created
+  `CREATE TRIGGER IF NOT EXISTS trg_reflections_created
    AFTER INSERT ON reflections
    WHEN NEW.created_at IS NULL
    BEGIN
@@ -341,21 +364,50 @@ const MIGRATIONS = [
      WHERE id = NEW.id;
    END`,
 
-  // Menghubungkan pembayaran dengan bukti yang diverifikasi
-  `ALTER TABLE spp_payments ADD COLUMN proof_id INTEGER`,
-
   // Mencegah satu bukti tercatat sebagai pembayaran lebih dari sekali
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_spp_payment_proof
    ON spp_payments (proof_id)`
 ];
 
-const ALL_STATEMENTS = [
+// Semua CREATE TABLE / INDEX bersifat IF NOT EXISTS, jadi aman dijalankan ulang
+const CREATE_STATEMENTS = [
   CREATE_USERS,
   ...OTHER_TABLES,
   ...NEW_TABLES,
-  ...NEW_INDEXES,
-  ...MIGRATIONS
+  ...NEW_INDEXES
 ];
+
+/* Perubahan tabel users agar role 'orang_tua' diizinkan.
+   Hanya dijalankan SEKALI: ketika tabel users punya CHECK tetapi belum memuat orang_tua. */
+const USERS_NEW_SQL = `CREATE TABLE users_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (
+    role IN ('admin','guru','siswa','kepsek','orang_tua')
+  ),
+  must_change INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  email TEXT,
+  phone TEXT,
+  avatar_data TEXT
+)`;
+
+const USERS_COPY_SQL = `INSERT INTO users_new (
+  id, username, password_hash, name, role,
+  must_change, active, created_at, email,
+  phone, avatar_data
+)
+SELECT
+  id, username, password_hash, name, role,
+  COALESCE(must_change, 0), COALESCE(active, 1), created_at, email,
+  phone, avatar_data
+FROM users`;
+
+const needsUsersRebuild = (sql) =>
+  /CHECK/i.test(String(sql || '')) && !String(sql || '').includes('orang_tua');
 
 /* =====================================================
    KONEKSI TURSO
@@ -371,12 +423,88 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   isTurso = true;
 
   const ready = (async () => {
-    for (const sql of ALL_STATEMENTS) {
+    try {
+      // 1. Buat semua tabel dan index dalam satu perjalanan ke database
       try {
-        await client.execute(sql);
+        await client.batch(
+          CREATE_STATEMENTS.map((sql) => ({ sql, args: [] })),
+          'write'
+        );
       } catch (e) {
-        console.error('Database migration:', e.message);
+        console.error('Database batch gagal, mencoba satu per satu:', e.message);
+        for (const sql of CREATE_STATEMENTS) {
+          try {
+            await client.execute(sql);
+          } catch (e2) {
+            console.error('Database migration:', e2.message);
+          }
+        }
       }
+
+      // 2. Tambah kolom yang belum ada
+      const colCache = new Map();
+      for (const [table, column, def] of COLUMN_ADDS) {
+        try {
+          if (!colCache.has(table)) {
+            const info = await client.execute(`PRAGMA table_info(${table})`);
+            colCache.set(table, new Set(info.rows.map((r) => String(r.name))));
+          }
+          if (!colCache.get(table).has(column)) {
+            await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+            colCache.get(table).add(column);
+            console.log(`Database: kolom ${table}.${column} ditambahkan`);
+          }
+        } catch (e) {
+          if (!/duplicate column name/i.test(String(e.message))) {
+            console.error('Database migration:', e.message);
+          }
+        }
+      }
+
+      // 3. Izinkan role orang_tua (hanya jika belum)
+      try {
+        const schema = await client.execute(
+          `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'`
+        );
+        const usersSql = String(schema.rows[0]?.sql || '');
+
+        if (needsUsersRebuild(usersSql)) {
+          const objects = await client.execute(`
+            SELECT sql FROM sqlite_master
+            WHERE tbl_name = 'users'
+              AND type IN ('index', 'trigger')
+              AND sql IS NOT NULL
+          `);
+
+          const statements = [
+            'PRAGMA defer_foreign_keys = ON',
+            'DROP TABLE IF EXISTS users_new',
+            USERS_NEW_SQL,
+            USERS_COPY_SQL,
+            'DROP TABLE users',
+            'ALTER TABLE users_new RENAME TO users',
+            ...objects.rows.map((row) => row.sql)
+          ];
+
+          // Satu batch = satu transaksi: kalau ada yang gagal, tidak ada yang berubah
+          await client.batch(statements.map((sql) => ({ sql, args: [] })), 'write');
+          console.log('Database: role orang_tua berhasil ditambahkan');
+        }
+      } catch (e) {
+        console.error('Database: gagal memperbarui tabel users:', e.message);
+      }
+
+      // 4. Perbaikan data dan trigger
+      for (const sql of POST_STATEMENTS) {
+        try {
+          await client.execute(sql);
+        } catch (e) {
+          console.error('Database migration:', e.message);
+        }
+      }
+    } catch (e) {
+      // Jangan biarkan promise ini menolak tanpa penangan (bisa mematikan proses Node)
+      console.error('Inisialisasi database gagal:', e.message);
     }
   })();
 
@@ -457,7 +585,65 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
 
   sqlite.pragma('journal_mode = WAL');
 
-  for (const sql of ALL_STATEMENTS) {
+  // 1. Tabel dan index
+  for (const sql of CREATE_STATEMENTS) {
+    try {
+      sqlite.exec(sql);
+    } catch (e) {
+      console.error('Database migration:', e.message);
+    }
+  }
+
+  // 2. Tambah kolom yang belum ada
+  for (const [table, column, def] of COLUMN_ADDS) {
+    try {
+      const have = new Set(
+        sqlite.prepare(`PRAGMA table_info(${table})`).all().map((r) => String(r.name))
+      );
+      if (!have.has(column)) {
+        sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+        console.log(`Database: kolom ${table}.${column} ditambahkan`);
+      }
+    } catch (e) {
+      if (!/duplicate column name/i.test(String(e.message))) {
+        console.error('Database migration:', e.message);
+      }
+    }
+  }
+
+  // 3. Izinkan role orang_tua (hanya jika belum), dalam satu transaksi
+  try {
+    const row = sqlite
+      .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'`)
+      .get();
+
+    if (needsUsersRebuild(row && row.sql)) {
+      const objects = sqlite
+        .prepare(`SELECT sql FROM sqlite_master
+                  WHERE tbl_name = 'users' AND type IN ('index', 'trigger') AND sql IS NOT NULL`)
+        .all();
+
+      sqlite.pragma('foreign_keys = OFF');
+      try {
+        sqlite.transaction(() => {
+          sqlite.exec('DROP TABLE IF EXISTS users_new');
+          sqlite.exec(USERS_NEW_SQL);
+          sqlite.exec(USERS_COPY_SQL);
+          sqlite.exec('DROP TABLE users');
+          sqlite.exec('ALTER TABLE users_new RENAME TO users');
+          for (const o of objects) sqlite.exec(o.sql);
+        })();
+        console.log('Database: role orang_tua berhasil ditambahkan');
+      } finally {
+        sqlite.pragma('foreign_keys = ON');
+      }
+    }
+  } catch (e) {
+    console.error('Database: gagal memperbarui tabel users:', e.message);
+  }
+
+  // 4. Perbaikan data dan trigger
+  for (const sql of POST_STATEMENTS) {
     try {
       sqlite.exec(sql);
     } catch (e) {

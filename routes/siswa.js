@@ -20,6 +20,7 @@ router.get('/report', async (req, res) => {
     const subjects = [];
     for (const t of teachings) {
       const a = await analyze(t.id);
+      if (!a) continue; // kelas ajar tidak bisa dianalisis: lewati, jangan menggagalkan seluruh laporan
       const mine = a.students.find((s) => s.id === me.id);
       const assessments = await db.prepare(`
         SELECT a.name, a.weight, a.max_score, o.code AS outcome_code, sc.score

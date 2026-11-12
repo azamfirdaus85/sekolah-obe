@@ -11,7 +11,7 @@ router.get('/overview', async (req, res) => {
     const ids = await db.prepare('SELECT id FROM teaching ORDER BY semester DESC, id').all();
     // FIX: ids bisa jadi Promise / bukan array kalau db.js lama, paksa jadi array
     const idList = Array.isArray(ids) ? ids : [];
-    const items = (await Promise.all(idList.map(async ({ id }) => {
+    const one = async ({ id }) => {
       try {
         const a = await analyze(id);
         if (!a) return null;
@@ -29,7 +29,15 @@ router.get('/overview', async (req, res) => {
         console.error('analyze fail teaching', id, e.message);
         return null;
       }
-    }))).filter(Boolean);
+    };
+
+    // Dibatasi beberapa sekaligus: ratusan query bersamaan ke Turso bisa membuat timeout
+    const items = [];
+    const CHUNK = 6;
+    for (let k = 0; k < idList.length; k += CHUNK) {
+      const part = await Promise.all(idList.slice(k, k + CHUNK).map(one));
+      items.push(...part.filter(Boolean));
+    }
     res.json({ kkm: KKM, items });
   } catch (e) {
     console.error(e);

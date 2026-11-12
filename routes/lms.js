@@ -39,6 +39,7 @@ let ready = null;
 function ensure() {
   if (!ready) {
     ready = (async () => {
+      await db.ready;
       await db.prepare(`CREATE TABLE IF NOT EXISTS lms_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         teaching_id INTEGER NOT NULL,
@@ -65,20 +66,24 @@ function ensure() {
         submitted_at TEXT DEFAULT (datetime('now')),
         UNIQUE(task_id, student_id)
       )`).run();
-            // Tambahkan kolom penilaian jika database sudah pernah dibuat.
-      for (const sql of [
+
+      // Penilaian tugas: kolom tambahan. Kalau kolom sudah ada, error diabaikan.
+      const alters = [
+        'ALTER TABLE lms_tasks ADD COLUMN max_score INTEGER DEFAULT 100',
+        'ALTER TABLE lms_tasks ADD COLUMN assessment_id INTEGER',
         'ALTER TABLE lms_submissions ADD COLUMN score REAL',
         'ALTER TABLE lms_submissions ADD COLUMN feedback TEXT',
         'ALTER TABLE lms_submissions ADD COLUMN graded_at TEXT'
-      ]) {
+      ];
+      for (const sql of alters) {
         try {
           await db.prepare(sql).run();
         } catch (e) {
-          if (!/duplicate column name/i.test(String(e.message || e))) {
-            throw e;
+          if (!/duplicate column/i.test(String((e && e.message) || e))) {
+            console.error('Migrasi LMS:', e.message);
           }
         }
-      }   
+      }
     })().catch((e) => {
       ready = null;
       throw e;
@@ -99,8 +104,8 @@ router.use(async (req, res, next) => {
     res.status(500).json({ error: 'Gagal menyiapkan data materi dan tugas.' });
   }
 });
-const isGuru = (req) =>
-  String(req.user?.role || '').trim().toLowerCase() === 'guru';
+
+const isGuru = (req) => req.user.role === 'guru';
 const fail = (res, e) => {
   console.error(e);
   return res.status(500).json({ error: 'Terjadi kesalahan: ' + String((e && e.message) || e) });
@@ -180,26 +185,24 @@ router.get('/teaching/:id', async (req, res) => {
 
     let tasks;
     if (student) {
-     tasks = await db.prepare(`
-  SELECT k.id, k.title, k.instructions, k.link, k.due_date, k.created_at,
-    x.answer AS my_answer,
-    x.link AS my_link,
-    x.submitted_at AS my_at,
-    x.score AS my_score,
-    x.feedback AS my_feedback
-  FROM lms_tasks k
-  LEFT JOIN lms_submissions x
-    ON x.task_id = k.id AND x.student_id = ?
-  WHERE k.teaching_id = ?
-  ORDER BY k.id DESC
-`).all(student.id, t.id);
+      tasks = await db.prepare(`
+        SELECT k.id, k.title, k.instructions, k.link, k.due_date, k.created_at, k.max_score,
+               x.answer AS my_answer, x.link AS my_link, x.submitted_at AS my_at,
+               x.score AS my_score, x.feedback AS my_feedback, x.graded_at AS my_graded_at
+        FROM lms_tasks k
+        LEFT JOIN lms_submissions x ON x.task_id = k.id AND x.student_id = ?
+        WHERE k.teaching_id = ?
+        ORDER BY k.id DESC
+      `).all(student.id, t.id);
       tasks.forEach((k) => {
         k.my_late = !!(k.my_at && k.due_date && dayJkt(k.my_at) > k.due_date);
       });
     } else {
       tasks = await db.prepare(`
         SELECT k.id, k.title, k.instructions, k.link, k.due_date, k.created_at,
-          (SELECT COUNT(*) FROM lms_submissions x WHERE x.task_id = k.id) AS submitted
+          k.max_score, k.assessment_id,
+          (SELECT COUNT(*) FROM lms_submissions x WHERE x.task_id = k.id) AS submitted,
+          (SELECT COUNT(*) FROM lms_submissions x WHERE x.task_id = k.id AND x.graded_at IS NOT NULL) AS graded
         FROM lms_tasks k
         WHERE k.teaching_id = ?
         ORDER BY k.id DESC
@@ -279,9 +282,25 @@ router.post('/teaching/:id/tasks', async (req, res) => {
     const due = str(req.body.due_date, 10);
     if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return bad(res, 'Format tenggat tidak valid.');
 
+    const rawMax = req.body.max_score;
+    const maxScore = rawMax === undefined || rawMax === null || rawMax === '' ? 100 : Number(rawMax);
+    if (!Number.isFinite(maxScore) || maxScore <= 0 || maxScore > 1000) {
+      return bad(res, 'Nilai maksimal harus antara 1 dan 1000.');
+    }
+
+    // Opsional: hubungkan ke asesmen OBE agar nilai tugas ikut ke nilai akhir
+    const assessmentId = Number(req.body.assessment_id) || null;
+    if (assessmentId) {
+      const a = await db.prepare('SELECT id FROM assessments WHERE id = ? AND teaching_id = ?')
+        .get(assessmentId, acc.t.id);
+      if (!a) return bad(res, 'Asesmen tidak valid untuk kelas ajar ini.');
+      const used = await db.prepare('SELECT id FROM lms_tasks WHERE assessment_id = ?').get(assessmentId);
+      if (used) return bad(res, 'Asesmen itu sudah dipakai tugas lain. Pilih asesmen yang berbeda.');
+    }
+
     const info = await insertReturnId(
-      'INSERT INTO lms_tasks(teaching_id, title, instructions, link, due_date) VALUES(?,?,?,?,?)',
-      [acc.t.id, title, instructions, link.value, due || null]
+      'INSERT INTO lms_tasks(teaching_id, title, instructions, link, due_date, max_score, assessment_id) VALUES(?,?,?,?,?,?,?)',
+      [acc.t.id, title, instructions, link.value, due || null, maxScore, assessmentId]
     );
     res.status(201).json({ id: info.id });
   } catch (e) {
@@ -291,7 +310,7 @@ router.post('/teaching/:id/tasks', async (req, res) => {
 
 async function guruTask(req) {
   return db.prepare(
-    `SELECT k.id, k.title, k.due_date, t.class_id, t.id AS teaching_id
+    `SELECT k.id, k.title, k.due_date, k.max_score, k.assessment_id, t.class_id, t.id AS teaching_id
      FROM lms_tasks k JOIN teaching t ON t.id = k.teaching_id
      WHERE k.id = ? AND t.teacher_id = ?`
   ).get(Number(req.params.id), req.user.id);
@@ -318,9 +337,8 @@ router.get('/tasks/:id/submissions', async (req, res) => {
     if (!k) return res.status(404).json({ error: 'Tugas tidak ditemukan.' });
 
     const rows = await db.prepare(`
-    SELECT st.id AS student_id, st.nis, u.name,
-       x.answer, x.link, x.submitted_at,
-       x.score, x.feedback
+      SELECT st.id AS student_id, st.nis, u.name, x.answer, x.link, x.submitted_at,
+             x.score, x.feedback, x.graded_at
       FROM students st
       JOIN users u ON u.id = st.user_id
       LEFT JOIN lms_submissions x ON x.task_id = ? AND x.student_id = st.id
@@ -338,8 +356,20 @@ router.get('/tasks/:id/submissions', async (req, res) => {
        WHERE t.id = ?`
     ).get(k.teaching_id);
 
+    let assessment = null;
+    if (k.assessment_id) {
+      assessment = await db.prepare(
+        `SELECT a.name, a.max_score, a.weight, o.code AS outcome_code
+         FROM assessments a LEFT JOIN outcomes o ON o.id = a.outcome_id WHERE a.id = ?`
+      ).get(k.assessment_id) || null;
+    }
+
     res.json({
-      task: { id: k.id, title: k.title, due_date: k.due_date, teaching_id: k.teaching_id },
+      task: {
+        id: k.id, title: k.title, due_date: k.due_date, teaching_id: k.teaching_id,
+        max_score: Number(k.max_score) || 100
+      },
+      assessment,
       teaching: cls,
       rows
     });
@@ -347,57 +377,105 @@ router.get('/tasks/:id/submissions', async (req, res) => {
     return fail(res, e);
   }
 });
-// ---------- Guru: beri nilai dan komentar tugas ----------
-router.post('/tasks/:id/grade', async (req, res) => {
-  if (!isGuru(req)) {
-    return res.status(403).json({ error: 'Hanya guru yang bisa memberi nilai.' });
-  }
 
+// ---------- Guru: beri nilai dan komentar ----------
+// Body: { grades: [{ student_id, score, feedback }] }
+// score kosong = nilai dihapus. Hanya siswa yang sudah mengumpulkan yang bisa dinilai.
+// Bila tugas terhubung ke asesmen OBE, nilai disalin ke tabel scores (diskalakan ke nilai maksimal asesmen).
+router.put('/tasks/:id/grades', async (req, res) => {
+  if (!isGuru(req)) return res.status(403).json({ error: 'Tidak diizinkan.' });
   try {
     const k = await guruTask(req);
     if (!k) return res.status(404).json({ error: 'Tugas tidak ditemukan.' });
 
-    const studentId = Number(req.body.student_id);
-    const rawScore = req.body.score;
-    const score = Number(rawScore);
-    const feedback = str(req.body.feedback, 1000);
+    const list = Array.isArray(req.body.grades) ? req.body.grades : null;
+    if (!list) return bad(res, 'Format data nilai tidak valid.');
+    if (list.length > 500) return bad(res, 'Terlalu banyak data dalam satu kali simpan.');
 
-    if (!Number.isSafeInteger(studentId) || studentId <= 0) {
-      return bad(res, 'Data siswa tidak valid.');
+    const max = Number(k.max_score) || 100;
+    const empty = (v) => v === null || v === '' || v === undefined;
+
+    const subs = await db.prepare(
+      `SELECT x.student_id, x.graded_at, x.feedback FROM lms_submissions x
+       JOIN students st ON st.id = x.student_id
+       WHERE x.task_id = ? AND st.class_id = ?`
+    ).all(k.id, k.class_id);
+    const submitted = new Set(subs.map((r) => Number(r.student_id)));
+    // siswa yang sebelumnya sudah punya penilaian (nilai atau komentar)
+    const hadGrade = new Set(
+      subs.filter((r) => r.graded_at || r.feedback).map((r) => Number(r.student_id))
+    );
+
+    let asmMax = null;
+    if (k.assessment_id) {
+      const a = await db.prepare('SELECT max_score FROM assessments WHERE id = ?').get(k.assessment_id);
+      asmMax = a ? Number(a.max_score) || 100 : null;
     }
 
-    if (
-      rawScore === '' ||
-      rawScore === undefined ||
-      !Number.isFinite(score) ||
-      score < 0 ||
-      score > 100
-    ) {
-      return bad(res, 'Nilai harus antara 0 sampai 100.');
+    const items = [];
+    let changed = 0;
+
+    for (const g of list) {
+      const sid = Number(g.student_id);
+      const feedback = str(g.feedback, 1000);
+      const hasScore = !empty(g.score);
+
+      if (!hasScore && !feedback) {
+        // tidak ada nilai dan tidak ada komentar: hapus penilaian bila sebelumnya ada
+        if (submitted.has(sid) && hadGrade.has(sid)) {
+          items.push([
+            'UPDATE lms_submissions SET score = NULL, feedback = NULL, graded_at = NULL WHERE task_id = ? AND student_id = ?',
+            [k.id, sid]
+          ]);
+          if (asmMax) {
+            items.push(['DELETE FROM scores WHERE assessment_id = ? AND student_id = ?', [k.assessment_id, sid]]);
+          }
+          changed++;
+        }
+        continue;
+      }
+
+      if (!submitted.has(sid)) {
+        return bad(res, 'Ada siswa yang belum mengumpulkan atau bukan anggota kelas ini, jadi belum bisa dinilai.');
+      }
+
+      let score = null;
+      if (hasScore) {
+        score = Number(g.score);
+        if (!Number.isFinite(score) || score < 0 || score > max) {
+          return bad(res, `Nilai harus antara 0 dan ${max}.`);
+        }
+        score = Math.round(score * 100) / 100;
+      }
+
+      // komentar saja tanpa nilai: tersimpan, tetapi belum dianggap "dinilai"
+      items.push([
+        `UPDATE lms_submissions
+         SET score = ?, feedback = ?, graded_at = ${hasScore ? "datetime('now')" : 'NULL'}
+         WHERE task_id = ? AND student_id = ?`,
+        [score, feedback || null, k.id, sid]
+      ]);
+
+      if (asmMax) {
+        items.push(['DELETE FROM scores WHERE assessment_id = ? AND student_id = ?', [k.assessment_id, sid]]);
+        if (hasScore) {
+          const scaled = Math.round((score / max) * asmMax * 100) / 100; // 2 desimal, jangan dibulatkan ke bilangan bulat
+          items.push([
+            'INSERT INTO scores(assessment_id, student_id, score) VALUES(?,?,?)',
+            [k.assessment_id, sid, scaled]
+          ]);
+        }
+      }
+      changed++;
     }
 
-    const submission = await db.prepare(`
-      SELECT x.id
-      FROM lms_submissions x
-      JOIN students st ON st.id = x.student_id
-      WHERE x.task_id = ? AND x.student_id = ? AND st.class_id = ?
-    `).get(k.id, studentId, k.class_id);
-
-    if (!submission) {
-      return bad(res, 'Siswa belum mengumpulkan tugas.');
-    }
-
-    await db.prepare(`
-      UPDATE lms_submissions
-      SET score = ?, feedback = ?, graded_at = datetime('now')
-      WHERE task_id = ? AND student_id = ?
-    `).run(score, feedback || null, k.id, studentId);
-
-    res.json({ ok: true });
+    if (items.length) await db.batch(items);
+    res.json({ ok: true, changed });
   } catch (e) {
     return fail(res, e);
   }
 });
+
 // ---------- Siswa: kumpulkan jawaban ----------
 router.post('/tasks/:id/submit', async (req, res) => {
   if (isGuru(req)) return res.status(403).json({ error: 'Hanya siswa yang bisa mengumpulkan tugas.' });
@@ -411,6 +489,14 @@ router.post('/tasks/:id/submit', async (req, res) => {
     ).get(Number(req.params.id), st.class_id);
     if (!k) return res.status(404).json({ error: 'Tugas tidak ditemukan.' });
 
+    // Tugas yang sudah dinilai dikunci supaya nilai tidak berubah diam-diam
+    const done = await db.prepare(
+      'SELECT graded_at FROM lms_submissions WHERE task_id = ? AND student_id = ?'
+    ).get(k.id, st.id);
+    if (done && done.graded_at) {
+      return bad(res, 'Tugas ini sudah dinilai guru dan tidak bisa dikirim ulang.');
+    }
+
     const answer = str(req.body.answer, 3000);
     const link = cleanLink(req.body.link);
     if (!link.ok) return bad(res, 'Tautan harus diawali http:// atau https://');
@@ -420,14 +506,9 @@ router.post('/tasks/:id/submit', async (req, res) => {
       `INSERT INTO lms_submissions(task_id, student_id, answer, link, submitted_at)
        VALUES(?, ?, ?, ?, datetime('now'))
        ON CONFLICT(task_id, student_id)
-     DO UPDATE SET
-  answer = excluded.answer,
-  link = excluded.link,
-  submitted_at = excluded.submitted_at,
-  score = NULL,
-  feedback = NULL,
-    graded_at = NULL
-      `).run(k.id, st.id, answer || null, link.value);
+       DO UPDATE SET answer = excluded.answer, link = excluded.link, submitted_at = excluded.submitted_at`
+    ).run(k.id, st.id, answer || null, link.value);
+
     res.json({ ok: true });
   } catch (e) {
     return fail(res, e);

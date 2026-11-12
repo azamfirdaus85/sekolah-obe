@@ -1,4 +1,3 @@
-
 const router = require('express').Router();
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
@@ -240,7 +239,12 @@ router.get('/guru/sesi', role('guru'), async (req, res) => {
       LIMIT 30
     `).all(teaching.id);
 
-    res.json({ teaching, rows });
+    const now = nowDateTime();
+    const session = rows.find(
+      (r) => r.status === 'open' && r.date === todayStr() && r.closes_at > now
+    ) || null;
+
+    res.json({ teaching, session, rows });
 
   } catch (e) {
     fail(res, e, 'Gagal memuat sesi absensi');
@@ -613,6 +617,7 @@ router.post('/siswa/absen', role('siswa'), async (req, res) => {
         a.date,
         a.status,
         a.closes_at,
+        a.opened_by,
         t.class_id
       FROM attendance_sessions a
       JOIN teaching t ON t.id = a.teaching_id

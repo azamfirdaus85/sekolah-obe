@@ -65,8 +65,18 @@ router.post('/teaching/:id/outcomes', ownTeaching, wrap(async (req, res) => {
 }));
 
 router.delete('/teaching/:id/outcomes/:oid', ownTeaching, wrap(async (req, res) => {
-  await db.prepare('DELETE FROM outcomes WHERE id = ? AND subject_id = ?')
-    .run(req.params.oid, req.teaching.subject_id);
+  const oid = Number(req.params.oid);
+  const own = await db.prepare('SELECT id FROM outcomes WHERE id = ? AND subject_id = ?')
+    .get(oid, req.teaching.subject_id);
+  if (!own) return res.status(404).json({ error: 'CP tidak ditemukan' });
+
+  // CP milik mapel (dipakai bersama guru lain), jangan dihapus bila masih dipakai asesmen
+  const used = await db.prepare('SELECT COUNT(*) n FROM assessments WHERE outcome_id = ?').get(oid);
+  if (Number(used.n) > 0) {
+    return bad(res, 'CP ini masih dipakai oleh asesmen. Hapus atau ubah asesmennya dulu.');
+  }
+
+  await db.prepare('DELETE FROM outcomes WHERE id = ?').run(oid);
   res.json({ ok: true });
 }));
 
@@ -97,7 +107,19 @@ router.post('/teaching/:id/assessments', ownTeaching, wrap(async (req, res) => {
 }));
 
 router.delete('/assessments/:aid', ownAssessment, wrap(async (req, res) => {
-  await db.prepare('DELETE FROM assessments WHERE id = ?').run(req.assessment.id);
+  const id = Number(req.assessment.id);
+
+  // Hapus juga nilainya (tidak ada lagi nilai yatim) dan lepaskan dari tugas LMS bila terhubung
+  const items = [
+    ['DELETE FROM scores WHERE assessment_id = ?', [id]],
+    ['DELETE FROM assessments WHERE id = ?', [id]]
+  ];
+  const lms = await db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lms_tasks'"
+  ).get();
+  if (lms) items.unshift(['UPDATE lms_tasks SET assessment_id = NULL WHERE assessment_id = ?', [id]]);
+
+  await db.batch(items);
   res.json({ ok: true });
 }));
 

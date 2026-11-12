@@ -19,6 +19,7 @@ let ready = null;
 function ensure() {
   if (!ready) {
     ready = (async () => {
+      await db.ready;
       await db.prepare(
         'CREATE TABLE IF NOT EXISTS notif_state (user_id INTEGER PRIMARY KEY, last_read TEXT)'
       ).run();
@@ -30,11 +31,21 @@ function ensure() {
   return ready;
 }
 
+// Struktur tabel jarang berubah, jadi hasilnya disimpan sebentar supaya setiap
+// pengecekan lonceng tidak memicu belasan query ke database.
+const SCHEMA_TTL = 2 * 60 * 1000;
+const colsCache = new Map();
+let tablesCache = { at: 0, names: new Set() };
+
 // Nama kolom sebuah tabel (nama tabel hanya dari konstanta di file ini)
 async function colsOf(table) {
+  const hit = colsCache.get(table);
+  if (hit && Date.now() - hit.at < SCHEMA_TTL) return hit.set;
   try {
     const rows = await db.prepare(`PRAGMA table_info(${table})`).all();
-    return new Set(rows.map((r) => String(r.name)));
+    const set = new Set(rows.map((r) => String(r.name)));
+    colsCache.set(table, { at: Date.now(), set });
+    return set;
   } catch (e) {
     return new Set();
   }
@@ -42,11 +53,13 @@ async function colsOf(table) {
 
 async function findTable(candidates) {
   try {
-    const rows = await db.prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table'"
-    ).all();
-    const have = new Set(rows.map((r) => String(r.name)));
-    return candidates.find((c) => have.has(c)) || null;
+    if (Date.now() - tablesCache.at >= SCHEMA_TTL) {
+      const rows = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+      ).all();
+      tablesCache = { at: Date.now(), names: new Set(rows.map((r) => String(r.name))) };
+    }
+    return candidates.find((c) => tablesCache.names.has(c)) || null;
   } catch (e) {
     return null;
   }
@@ -140,7 +153,7 @@ router.get('/', async (req, res) => {
     // 2b. Materi dan tugas baru dari guru (siswa). Dilewati bila tabel LMS belum dibuat.
     if (role === 'siswa') {
       try {
-        const lt = await findTable(['lms_tasks']);
+        const lt = (await findTable(['lms_tasks'])) && (await findTable(['lms_materials']));
         if (lt) {
           const base = `
             FROM %T% x
@@ -176,6 +189,99 @@ router.get('/', async (req, res) => {
       } catch (e) {
         console.error('Notif LMS:', e.message);
       }
+    }
+
+    // 2c. Tugas yang sudah dinilai guru (siswa). Dilewati bila kolom penilaian belum ada.
+    if (role === 'siswa') {
+      try {
+        const sub = await colsOf('lms_submissions');
+        if (sub.has('graded_at') && sub.has('score')) {
+          const rows = await db.prepare(`
+            SELECT k.title, sj.name AS subject, x.score, k.max_score, x.graded_at AS at
+            FROM lms_submissions x
+            JOIN lms_tasks k ON k.id = x.task_id
+            JOIN teaching t ON t.id = k.teaching_id
+            JOIN subjects sj ON sj.id = t.subject_id
+            JOIN students st ON st.id = x.student_id
+            WHERE st.user_id = ? AND x.graded_at IS NOT NULL
+            ORDER BY x.graded_at DESC
+            LIMIT 20
+          `).all(uid);
+          for (const r of rows) {
+            const at = norm(r.at);
+            if (!at || at < cutoff) continue;
+            const nilai = r.score == null ? '' : ` (nilai ${Number(r.score)}/${Number(r.max_score) || 100})`;
+            items.push({
+              type: 'tugas_dinilai',
+              icon: '✅',
+              title: 'Tugas sudah dinilai',
+              text: `${r.subject} - ${r.title}${nilai}`,
+              link: '#/lms',
+              at,
+              unread: at > lastRead,
+              count: 1
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Notif tugas dinilai:', e.message);
+      }
+    }
+
+    // 2d. Perizinan siswa. Dilewati bila tabel belum dibuat.
+    try {
+      const lv = await findTable(['leave_requests']);
+      if (lv) {
+        if (role === 'siswa') {
+          const rows = await db.prepare(`
+            SELECT lr.type, lr.status, lr.start_date, lr.end_date, lr.reviewed_at AS at
+            FROM leave_requests lr
+            JOIN students st ON st.id = lr.student_id
+            WHERE st.user_id = ? AND lr.status <> 'menunggu' AND lr.reviewed_at IS NOT NULL
+            ORDER BY lr.reviewed_at DESC LIMIT 10
+          `).all(uid);
+          for (const r of rows) {
+            const at = norm(r.at);
+            if (!at || at < cutoff) continue;
+            const ok = r.status === 'disetujui';
+            items.push({
+              type: 'izin',
+              icon: ok ? '📝' : '⛔',
+              title: ok ? 'Izin disetujui' : 'Izin ditolak',
+              text: `${r.type === 'sakit' ? 'Sakit' : 'Izin'} ${r.start_date}${r.end_date && r.end_date !== r.start_date ? ' s/d ' + r.end_date : ''}`,
+              link: '#/izin',
+              at,
+              unread: at > lastRead,
+              count: 1
+            });
+          }
+        } else if (role === 'guru' || role === 'admin') {
+          let sql = `SELECT COUNT(*) n FROM leave_requests lr
+                     JOIN students st ON st.id = lr.student_id
+                     WHERE lr.status = 'menunggu'`;
+          const args = [];
+          if (role === 'guru') {
+            sql += ' AND st.class_id IN (SELECT id FROM classes WHERE homeroom_teacher_id = ?)';
+            args.push(uid);
+          }
+          const row = await db.prepare(sql).get(...args);
+          const n = Number(row && row.n) || 0;
+          if (n > 0) {
+            items.push({
+              type: 'izin',
+              icon: '📝',
+              title: 'Pengajuan izin menunggu persetujuan',
+              text: `${n} pengajuan izin siswa berstatus menunggu`,
+              link: '#/izin/menunggu',
+              at: iso(now),
+              unread: true,
+              count: n
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Notif perizinan:', e.message);
     }
 
     // 3. Pengaduan
