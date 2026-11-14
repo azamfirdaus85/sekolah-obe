@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { auth, role } = require('../authMiddleware');
+const { auth, role, forgetUser } = require('../authMiddleware');
 const { buildReport } = require('../rapor');
 
 router.use(auth, role('admin'));
@@ -300,14 +300,22 @@ async function insertReturnId(sql, args = []) {
 
 router.get('/stats', async (req, res) => {
   try {
-    const n = async (sql) => (await db.prepare(sql).get()).n;
+    // Satu query untuk semua angka (dulu lima query berurutan ke database)
+    const r = await db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM users WHERE role = 'siswa') AS siswa,
+        (SELECT COUNT(*) FROM users WHERE role = 'guru') AS guru,
+        (SELECT COUNT(*) FROM classes) AS kelas,
+        (SELECT COUNT(*) FROM subjects) AS mapel,
+        (SELECT COUNT(*) FROM teaching) AS kelasAjar
+    `).get();
 
     res.json({
-      siswa: await n("SELECT COUNT(*) n FROM users WHERE role='siswa'"),
-      guru: await n("SELECT COUNT(*) n FROM users WHERE role='guru'"),
-      kelas: await n('SELECT COUNT(*) n FROM classes'),
-      mapel: await n('SELECT COUNT(*) n FROM subjects'),
-      kelasAjar: await n('SELECT COUNT(*) n FROM teaching')
+      siswa: Number(r.siswa),
+      guru: Number(r.guru),
+      kelas: Number(r.kelas),
+      mapel: Number(r.mapel),
+      kelasAjar: Number(r.kelasAjar)
     });
   } catch (e) {
     return handleDb(res, e);
@@ -502,6 +510,7 @@ router.put('/users/:id', async (req, res) => {
       ).run(await bcrypt.hash(pw, 10), u.id);
     }
 
+    forgetUser(u.id);
     res.json({ ok: true });
   } catch (e) {
     return handleDb(res, e);
@@ -577,6 +586,7 @@ router.delete('/users/:id', async (req, res) => {
     items.push(['DELETE FROM users WHERE id = ?', [id]]);
 
     await db.batch(items); // atomik: semua terhapus atau tidak sama sekali
+    forgetUser(id);
     res.json({ ok: true });
   } catch (e) {
     return handleDb(res, e);

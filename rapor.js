@@ -1,5 +1,5 @@
 const db = require('./db');
-const { analyze, KKM } = require('./analysis');
+const { analyzeMany, KKM } = require('./analysis');
 
 /* =====================================================
    E-RAPOR
@@ -73,8 +73,11 @@ async function buildReport(userId, semester) {
 
   const list = teachings.filter((t) => t.semester === chosen);
 
+  // Semua kelas ajar pada semester ini dianalisis sekaligus (5 query, bukan 5 query per mapel)
+  const analyses = await analyzeMany(list.map((t) => t.id));
+
   for (const t of list) {
-    const a = await analyze(t.id);
+    const a = analyses.get(Number(t.id));
     if (!a) continue;
 
     const mine = a.students.find((s) => s.id === me.id);

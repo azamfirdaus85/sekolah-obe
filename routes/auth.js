@@ -2,7 +2,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { sign, auth, cookieOptions } = require('../authMiddleware');
+const { sign, auth, cookieOptions, forgetUser } = require('../authMiddleware');
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -75,6 +75,7 @@ router.post('/change-password', auth, async (req, res) => {
     await db.prepare('UPDATE users SET password_hash = ?, must_change = 0 WHERE id = ?')
       .run(await bcrypt.hash(newPw, 10), req.user.id);
 
+    forgetUser(req.user.id);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

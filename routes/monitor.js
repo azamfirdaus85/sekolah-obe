@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
-const { analyze, KKM } = require('../analysis');
+const { analyzeMany, KKM } = require('../analysis');
 const { buildReport } = require('../rapor');
 
 router.use(auth, role('kepsek', 'admin'));
@@ -9,36 +9,27 @@ router.use(auth, role('kepsek', 'admin'));
 router.get('/overview', async (req, res) => {
   try {
     const ids = await db.prepare('SELECT id FROM teaching ORDER BY semester DESC, id').all();
-    // FIX: ids bisa jadi Promise / bukan array kalau db.js lama, paksa jadi array
-    const idList = Array.isArray(ids) ? ids : [];
-    const one = async ({ id }) => {
-      try {
-        const a = await analyze(id);
-        if (!a) return null;
-        return {
-          id,
-          subject: a.teaching.subject_name,
-          class_name: a.teaching.class_name,
-          teacher: a.teaching.teacher_name,
-          semester: a.teaching.semester,
-          students: a.students.length,
-          classAvg: a.classAvg,
-          outcomes: a.outcomes.map((o) => ({ code: o.code, avg: o.avg, passRate: o.passRate }))
-        };
-      } catch (e) {
-        console.error('analyze fail teaching', id, e.message);
-        return null;
-      }
-    };
+    const idList = (Array.isArray(ids) ? ids : []).map((r) => Number(r.id));
 
-    // Dibatasi beberapa sekaligus: ratusan query bersamaan ke Turso bisa membuat timeout
-    const items = [];
-    const CHUNK = 6;
-    for (let k = 0; k < idList.length; k += CHUNK) {
-      const part = await Promise.all(idList.slice(k, k + CHUNK).map(one));
-      items.push(...part.filter(Boolean));
-    }
-    res.json({ kkm: KKM, items });
+    // Semua kelas ajar dianalisis sekaligus (5 query total, berapa pun jumlah kelasnya).
+    // lenient: kelas ajar yang mapel/kelas/gurunya sudah terhapus tetap tampil, supaya terlihat dan bisa dibereskan.
+    const map = await analyzeMany(idList, { lenient: true });
+
+    const items = idList
+      .map((id) => map.get(id))
+      .filter(Boolean)
+      .map((a) => ({
+        id: Number(a.teaching.id),
+        subject: a.teaching.subject_name,
+        class_name: a.teaching.class_name,
+        teacher: a.teaching.teacher_name,
+        semester: a.teaching.semester,
+        students: a.students.length,
+        classAvg: a.classAvg,
+        outcomes: a.outcomes.map((o) => ({ code: o.code, avg: o.avg, passRate: o.passRate }))
+      }));
+
+    res.json({ kkm: KKM, total: idList.length, items });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Gagal load overview: ' + e.message });
@@ -47,7 +38,7 @@ router.get('/overview', async (req, res) => {
 
 router.get('/teaching/:id/analysis', async (req, res) => {
   try {
-    const a = await analyze(Number(req.params.id));
+    const a = (await analyzeMany([Number(req.params.id)], { lenient: true })).get(Number(req.params.id)) || null;
     if (!a) return res.status(404).json({ error: 'Kelas ajar tidak ditemukan' });
     res.json(a);
   } catch (e) {

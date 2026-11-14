@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { auth, role } = require('../authMiddleware');
-const { analyze, KKM } = require('../analysis');
+const { analyzeMany, KKM } = require('../analysis');
 const { buildReport } = require('../rapor');
 
 router.use(auth, role('siswa'));
@@ -17,17 +17,37 @@ router.get('/report', async (req, res) => {
     if (!me.class_id) return res.json({ student: me, kkm: KKM, subjects: [] });
 
     const teachings = await db.prepare('SELECT id FROM teaching WHERE class_id = ? ORDER BY semester DESC, id').all(me.class_id);
+    const ids = teachings.map((t) => Number(t.id));
+
+    // Semua dimuat sekaligus: analisis seluruh kelas ajar + seluruh asesmen siswa ini
+    const analyses = await analyzeMany(ids);
+    const asmRows = ids.length
+      ? await db.prepare(`
+          SELECT a.teaching_id, a.name, a.weight, a.max_score, o.code AS outcome_code, sc.score
+          FROM assessments a
+          LEFT JOIN outcomes o ON o.id = a.outcome_id
+          LEFT JOIN scores sc ON sc.assessment_id = a.id AND sc.student_id = ?
+          WHERE a.teaching_id IN (${ids.map(() => '?').join(',')})
+          ORDER BY a.id`).all(me.id, ...ids)
+      : [];
+    const asmBy = new Map();
+    for (const r of asmRows) {
+      const k = Number(r.teaching_id);
+      if (!asmBy.has(k)) asmBy.set(k, []);
+      asmBy.get(k).push({
+        name: r.name,
+        weight: r.weight,
+        max_score: r.max_score,
+        outcome_code: r.outcome_code,
+        score: r.score
+      });
+    }
+
     const subjects = [];
     for (const t of teachings) {
-      const a = await analyze(t.id);
+      const a = analyses.get(Number(t.id));
       if (!a) continue; // kelas ajar tidak bisa dianalisis: lewati, jangan menggagalkan seluruh laporan
       const mine = a.students.find((s) => s.id === me.id);
-      const assessments = await db.prepare(`
-        SELECT a.name, a.weight, a.max_score, o.code AS outcome_code, sc.score
-        FROM assessments a
-        LEFT JOIN outcomes o ON o.id = a.outcome_id
-        LEFT JOIN scores sc ON sc.assessment_id = a.id AND sc.student_id = ?
-        WHERE a.teaching_id = ? ORDER BY a.id`).all(me.id, t.id);
       subjects.push({
         id: t.id,
         subject: a.teaching.subject_name,
@@ -40,7 +60,7 @@ router.get('/report', async (req, res) => {
           description: o.description,
           score: mine ? mine.scores[o.id] : null
         })),
-        assessments
+        assessments: asmBy.get(Number(t.id)) || []
       });
     }
     res.json({ student: me, kkm: KKM, subjects });

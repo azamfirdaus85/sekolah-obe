@@ -553,7 +553,10 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     const d = await api('/monitor/overview');
     const rows = d.items.map((i) => `<tr><td><b>${esc(i.subject)}</b></td><td>${esc(i.class_name)}</td><td>${esc(i.teacher)}</td><td class="num">${i.students}</td><td>${bar(i.classAvg, d.kkm)}</td>
       <td>${i.outcomes.map((o) => `<span class="pill ${o.passRate >= 75 ? 'ok' : 'low'}">${esc(o.code)}: ${Math.round(o.passRate || 0)}%</span>`).join(' ')}</td><td><a class="btn sm ghost" href="#/detail/${i.id}">Detail</a></td></tr>`).join('');
-    return `<h1>Monitoring Capaian</h1><div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th class="num">Siswa</th><th>Rata-rata</th><th>Ketuntasan</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const emptyRow = `<tr><td colspan="7" class="muted">${d.total
+      ? `Ada ${d.total} kelas ajar, tetapi tidak ada yang dapat dianalisis. Periksa log server.`
+      : 'Belum ada kelas ajar. Tambahkan dulu di menu Kelas Ajar.'}</td></tr>`;
+    return `<h1>Monitoring Capaian</h1><div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th class="num">Siswa</th><th>Rata-rata</th><th>Ketuntasan</th><th></th></tr></thead><tbody>${rows || emptyRow}</tbody></table></div>`;
   }
 
   async function detailView(id) {

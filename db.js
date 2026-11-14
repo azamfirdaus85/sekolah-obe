@@ -328,6 +328,11 @@ const NEW_INDEXES = [
    - kolom hanya ditambah kalau BELUM ada (tidak ada lagi error "duplicate column")
    - tabel users TIDAK lagi dibangun ulang setiap server start
    ===================================================== */
+// Naikkan nilai ini setiap kali menambah tabel, kolom, atau index baru.
+// Selama versinya sama, server TIDAK mengulang migrasi saat start (hemat belasan
+// perjalanan ke database di setiap cold start Vercel).
+const SCHEMA_VERSION = '2026-11-14-1';
+
 const COLUMN_ADDS = [
   ['users', 'active', 'INTEGER DEFAULT 1'],
   ['users', 'must_change', 'INTEGER DEFAULT 0'],
@@ -423,7 +428,21 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   isTurso = true;
 
   const ready = (async () => {
+    let clean = true;
+    const fail = (...args) => {
+      clean = false;
+      console.error(...args);
+    };
+
     try {
+      // Cek cepat: bila skema sudah versi terbaru, lewati seluruh migrasi (hanya 1 query)
+      try {
+        const v = await client.execute(`SELECT value FROM schema_meta WHERE key = 'version'`);
+        if (v.rows[0] && String(v.rows[0].value) === SCHEMA_VERSION) return;
+      } catch (e) {
+        // tabel schema_meta belum ada: jalankan migrasi lengkap
+      }
+
       // 1. Buat semua tabel dan index dalam satu perjalanan ke database
       try {
         await client.batch(
@@ -431,12 +450,12 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
           'write'
         );
       } catch (e) {
-        console.error('Database batch gagal, mencoba satu per satu:', e.message);
+        fail('Database batch gagal, mencoba satu per satu:', e.message);
         for (const sql of CREATE_STATEMENTS) {
           try {
             await client.execute(sql);
           } catch (e2) {
-            console.error('Database migration:', e2.message);
+            fail('Database migration:', e2.message);
           }
         }
       }
@@ -456,7 +475,7 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
           }
         } catch (e) {
           if (!/duplicate column name/i.test(String(e.message))) {
-            console.error('Database migration:', e.message);
+            fail('Database migration:', e.message);
           }
         }
       }
@@ -491,7 +510,7 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
           console.log('Database: role orang_tua berhasil ditambahkan');
         }
       } catch (e) {
-        console.error('Database: gagal memperbarui tabel users:', e.message);
+        fail('Database: gagal memperbarui tabel users:', e.message);
       }
 
       // 4. Perbaikan data dan trigger
@@ -499,8 +518,18 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
         try {
           await client.execute(sql);
         } catch (e) {
-          console.error('Database migration:', e.message);
+          fail('Database migration:', e.message);
         }
+      }
+
+      // 5. Tandai skema sudah mutakhir (hanya bila semua langkah di atas berhasil)
+      if (clean) {
+        await client.execute(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
+        await client.execute({
+          sql: `INSERT INTO schema_meta (key, value) VALUES ('version', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          args: [SCHEMA_VERSION]
+        });
       }
     } catch (e) {
       // Jangan biarkan promise ini menolak tanpa penangan (bisa mematikan proses Node)

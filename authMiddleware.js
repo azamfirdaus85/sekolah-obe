@@ -43,6 +43,32 @@ function sign(user) {
   return jwt.sign({ id: user.id }, SECRET, { expiresIn: '8h', algorithm: 'HS256' });
 }
 
+// Cache pengguna singkat (10 detik): setiap permintaan tidak perlu lagi ke database hanya
+// untuk memeriksa akun. Akun yang wajib ganti password TIDAK pernah di-cache.
+const USER_CACHE_TTL = 10 * 1000;
+const userCache = new Map();
+
+function cacheGet(id) {
+  const hit = userCache.get(id);
+  if (hit && Date.now() - hit.at < USER_CACHE_TTL) return { ...hit.user };
+  if (hit) userCache.delete(id);
+  return null;
+}
+
+function cacheSet(user) {
+  if (Number(user.must_change) === 1) {
+    userCache.delete(Number(user.id));
+    return;
+  }
+  if (userCache.size > 500) userCache.clear();
+  userCache.set(Number(user.id), { at: Date.now(), user: { ...user } });
+}
+
+// Panggil setelah akun diubah/dihapus agar perubahan langsung berlaku
+function forgetUser(id) {
+  userCache.delete(Number(id));
+}
+
 // Akun yang wajib ganti password hanya boleh memakai tiga endpoint ini
 const MUST_CHANGE_ALLOWED = new Set(['/api/me', '/api/logout', '/api/change-password']);
 
@@ -59,10 +85,15 @@ async function auth(req, res, next) {
   }
 
   try {
-    await db.ready; // pastikan tabel sudah siap (penting di Turso/Vercel)
-    const user = await db.prepare(
-      'SELECT id, username, name, role, active, must_change FROM users WHERE id = ?'
-    ).get(payload.id);
+    let user = cacheGet(Number(payload.id));
+
+    if (!user) {
+      await db.ready; // pastikan tabel sudah siap (penting di Turso/Vercel)
+      user = await db.prepare(
+        'SELECT id, username, name, role, active, must_change FROM users WHERE id = ?'
+      ).get(payload.id);
+      if (user) cacheSet(user);
+    }
 
     // active NULL dianggap aktif. Tolak hanya jika active === 0
     if (!user || Number(user.active) === 0) {
@@ -97,4 +128,4 @@ function role(...roles) {
       : res.status(403).json({ error: 'Akses ditolak' });
 }
 
-module.exports = { sign, auth, role, cookieOptions };
+module.exports = { sign, auth, role, cookieOptions, forgetUser };

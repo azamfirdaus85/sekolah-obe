@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 
 const db = require('../db');
-const { auth, role } = require('../authMiddleware');
+const { auth, role, forgetUser } = require('../authMiddleware');
 
 const router = express.Router();
 
@@ -205,6 +205,8 @@ router.post('/admin/:id/approve', auth, role('admin'), async (req, res) => {
         message: 'Permintaan tidak ditemukan atau sudah diproses.'
       });
     }
+
+    forgetUser(request.user_id);
 
     return res.json({
       success: true,
