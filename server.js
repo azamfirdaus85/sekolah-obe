@@ -81,7 +81,7 @@ process.on('unhandledRejection', (reason) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`SIAKAD OBE Sekolah berjalan di localhost:${PORT}`);
+    console.log(`SIAKAD Sekolah OBE 85 berjalan di localhost:${PORT}`);
   });
 }
 

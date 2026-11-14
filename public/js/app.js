@@ -140,11 +140,11 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   };
 
   function renderLogin(msg = '') {
-    document.title = 'Masuk - SIAKAD OBE Sekolah';
+    document.title = 'Masuk - SIAKAD sekolah OBE 85';
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-hero">
-          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
+          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD Sekolah OBE 85</span></div>
           <h1>Sistem Informasi Akademik<br>Berbasis Capaian Pembelajaran</h1>
           <p>Pantau kurikulum, penilaian, dan refleksi pembelajaran dalam satu tempat.</p>
           <ul>
@@ -175,7 +175,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   function renderForceChange() {
     document.title = 'Buat Password Baru';
     app.innerHTML = `
-      <div class="login-wrap"><section class="login-hero"><div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
+      <div class="login-wrap"><section class="login-hero"><div class="brand"><span class="brand-mark">S</span><span>SIAKAD Sekolah OBE 85</span></div>
       <h1>Buat password baru</h1><p>Demi keamanan, Anda wajib mengganti password awal sebelum melanjutkan.</p></section>
       <section class="login-panel"><div class="login-box"><h2>Ganti Password</h2>
       <form class="form" data-form="changePw" style="margin-top:1rem">
@@ -271,7 +271,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     const home = homeHtml(ring) + chartsHtml(grafik);
     return `
       <div style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
-        <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
+        <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah 85.</p></div>
         <span style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
@@ -1427,7 +1427,7 @@ const QUICK_EXTRA = {
       </div>
       <div class="rapor-paper">
         <h2>LAPORAN HASIL BELAJAR (E-RAPOR)</h2>
-        <p class="rapor-sub">SIAKAD OBE Sekolah</p>
+        <p class="rapor-sub">SIAKAD Sekolah OBE 85</p>
         <table class="rapor-id"><tbody>
           <tr><td style="width:90px">Nama</td><td>: <b>${esc(d.student.name)}</b></td><td style="width:90px">Kelas</td><td>: ${esc(d.student.class_name)}</td></tr>
           <tr><td>NIS</td><td>: ${esc(d.student.nis || '-')}</td><td>Semester</td><td>: ${esc(d.semester || '-')}</td></tr>
@@ -3278,7 +3278,7 @@ async cetakInvoiceSPP(el) {
         <div class="invoice">
 
           <h2>INVOICE TAGIHAN SPP</h2>
-          <p class="subtitle">SIAKAD OBE SEKOLAH</p>
+          <p class="subtitle">SIAKAD SEKOLAH OBE 85</p>
 
           <div class="row">
             <span>Nomor Invoice</span>

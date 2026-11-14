@@ -171,7 +171,7 @@ router.get('/backup', async (req, res) => {
 
     const json = JSON.stringify(
       {
-        app: 'SIAKAD OBE Sekolah',
+        app: 'SIAKAD Sekolah OBE 85',
         created_at: new Date().toISOString(),
         counts,
         note: full
