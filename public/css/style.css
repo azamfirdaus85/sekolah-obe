@@ -629,3 +629,17 @@ input.abs-note{width:100%;min-width:150px}
 }
 .card button:not([class]):hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(201,168,106,.35)}
 .card button:not([class]):disabled{opacity:.5;cursor:not-allowed;transform:none}
+/* Sidebar bisa di-scroll agar semua menu terjangkau */
+.side {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .side {
+    max-height: 100vh;
+    max-height: 100dvh;
+    padding-bottom: 7rem; /* ruang agar menu terakhir tidak tertutup bar browser */
+  }
+}
