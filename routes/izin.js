@@ -90,8 +90,8 @@ function ensure() {
 }
 
 router.use(async (req, res, next) => {
-  if (!['siswa', 'guru', 'admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Fitur ini hanya untuk siswa, wali kelas, dan admin.' });
+  if (!['siswa', 'guru', 'admin', 'orang_tua'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Fitur ini hanya untuk siswa, orang tua, wali kelas, dan admin.' });
   }
   try {
     await ensure();
@@ -137,12 +137,8 @@ router.get('/saya', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
-  if (req.user.role !== 'siswa') return res.status(403).json({ error: 'Hanya siswa yang bisa mengajukan izin.' });
-  try {
-    const st = await studentOf(req);
-    if (!st || !st.class_id) return bad(res, 'Anda belum terdaftar di kelas.');
-
+// Inti pengajuan izin. Dipakai oleh siswa (untuk dirinya) dan orang tua (untuk anaknya)
+async function createLeave(req, res, st) {
     const type = str(req.body.type, 10);
     if (!TYPES.includes(type)) return bad(res, 'Jenis harus izin atau sakit.');
 
@@ -173,6 +169,75 @@ router.post('/', async (req, res) => {
       [st.id, type, start, end, reason, link.value]
     );
     res.status(201).json({ id: info.id });
+}
+
+router.post('/', async (req, res) => {
+  if (req.user.role !== 'siswa') return res.status(403).json({ error: 'Hanya siswa yang bisa mengajukan izin.' });
+  try {
+    const st = await studentOf(req);
+    if (!st || !st.class_id) return bad(res, 'Anda belum terdaftar di kelas.');
+    await createLeave(req, res, st);
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+/* =====================================================
+   ORANG TUA / WALI (untuk anak yang terhubung dengan akunnya)
+   ===================================================== */
+
+async function childOf(req) {
+  return db.prepare(`
+    SELECT s.id, s.class_id
+    FROM parent_student_links l
+    JOIN students s ON s.id = l.student_id
+    WHERE l.parent_user_id = ? AND s.id = ?
+  `).get(req.user.id, Number(req.params.sid));
+}
+
+router.get('/anak/:sid', async (req, res) => {
+  if (req.user.role !== 'orang_tua') return res.status(403).json({ error: 'Hanya untuk orang tua/wali.' });
+  try {
+    const c = await childOf(req);
+    if (!c) return res.status(404).json({ error: 'Data anak tidak ditemukan.' });
+
+    const rows = await db.prepare(`
+      SELECT id, type, start_date, end_date, reason, link, status, review_note, reviewed_at, created_at
+      FROM leave_requests WHERE student_id = ? ORDER BY id DESC LIMIT 100
+    `).all(c.id);
+
+    res.json({ today: todayJkt(), rows });
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+router.post('/anak/:sid', async (req, res) => {
+  if (req.user.role !== 'orang_tua') return res.status(403).json({ error: 'Hanya untuk orang tua/wali.' });
+  try {
+    const c = await childOf(req);
+    if (!c) return res.status(404).json({ error: 'Data anak tidak ditemukan.' });
+    if (!c.class_id) return bad(res, 'Anak belum terdaftar di kelas.');
+    await createLeave(req, res, c);
+  } catch (e) {
+    return fail(res, e);
+  }
+});
+
+router.delete('/anak/:sid/:id', async (req, res) => {
+  if (req.user.role !== 'orang_tua') return res.status(403).json({ error: 'Hanya untuk orang tua/wali.' });
+  try {
+    const c = await childOf(req);
+    if (!c) return res.status(404).json({ error: 'Data anak tidak ditemukan.' });
+
+    const r = await db.prepare(
+      'SELECT id, status FROM leave_requests WHERE id = ? AND student_id = ?'
+    ).get(Number(req.params.id), c.id);
+    if (!r) return res.status(404).json({ error: 'Pengajuan tidak ditemukan.' });
+    if (r.status !== 'menunggu') return bad(res, 'Pengajuan yang sudah diproses tidak bisa dibatalkan.');
+
+    await db.prepare('DELETE FROM leave_requests WHERE id = ?').run(r.id);
+    res.json({ ok: true });
   } catch (e) {
     return fail(res, e);
   }

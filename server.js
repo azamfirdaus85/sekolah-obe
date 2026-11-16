@@ -20,6 +20,7 @@ app.use(helmet({
 const bigJson = express.json({ limit: '8mb' });
 app.use('/api/portal/akun/foto', bigJson);
 app.use('/api/portal/keuangan/saya', bigJson);
+app.use('/api/ortu/anak', bigJson); // unggah bukti SPP oleh orang tua
 app.use('/api/admin/users/import', bigJson);
 app.use(express.json({ limit: '200kb' }));
 
@@ -36,6 +37,7 @@ app.use('/api/portal', require('./routes/portal'));
 app.use('/api/notif', require('./routes/notif'));
 app.use('/api/lms', require('./routes/lms'));
 app.use('/api/izin', require('./routes/izin'));
+app.use('/api/ortu', require('./routes/orangtua'));
 
 // FITUR LUPA PASSWORD
 app.use('/api/password-reset', require('./routes/passwordReset'));
@@ -81,7 +83,7 @@ process.on('unhandledRejection', (reason) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`SIAKAD Sekolah OBE 85 berjalan di localhost:${PORT}`);
+    console.log(`SIAKAD OBE Sekolah berjalan di localhost:${PORT}`);
   });
 }
 

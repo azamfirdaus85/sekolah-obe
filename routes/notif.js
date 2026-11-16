@@ -255,6 +255,33 @@ router.get('/', async (req, res) => {
               count: 1
             });
           }
+        } else if (role === 'orang_tua') {
+          // Keputusan wali kelas atas izin yang diajukan untuk anak
+          const rows = await db.prepare(`
+            SELECT lr.type, lr.status, lr.start_date, lr.end_date, lr.reviewed_at AS at,
+                   st.id AS sid, u.name AS student_name
+            FROM leave_requests lr
+            JOIN parent_student_links l ON l.student_id = lr.student_id
+            JOIN students st ON st.id = lr.student_id
+            JOIN users u ON u.id = st.user_id
+            WHERE l.parent_user_id = ? AND lr.status <> 'menunggu' AND lr.reviewed_at IS NOT NULL
+            ORDER BY lr.reviewed_at DESC LIMIT 10
+          `).all(uid);
+          for (const r of rows) {
+            const at = norm(r.at);
+            if (!at || at < cutoff) continue;
+            const ok = r.status === 'disetujui';
+            items.push({
+              type: 'izin',
+              icon: ok ? '📝' : '⛔',
+              title: ok ? 'Izin anak disetujui' : 'Izin anak ditolak',
+              text: `${r.student_name}: ${r.type === 'sakit' ? 'Sakit' : 'Izin'} ${r.start_date}${r.end_date && r.end_date !== r.start_date ? ' s/d ' + r.end_date : ''}`,
+              link: `#/ortu/izin/${r.sid}`,
+              at,
+              unread: at > lastRead,
+              count: 1
+            });
+          }
         } else if (role === 'guru' || role === 'admin') {
           let sql = `SELECT COUNT(*) n FROM leave_requests lr
                      JOIN students st ON st.id = lr.student_id
@@ -284,13 +311,41 @@ router.get('/', async (req, res) => {
       console.error('Notif perizinan:', e.message);
     }
 
+    // 2e. Tagihan SPP anak yang belum lunas (orang tua)
+    if (role === 'orang_tua') {
+      try {
+        const row = await db.prepare(`
+          SELECT COUNT(*) n
+          FROM spp_invoices i
+          JOIN parent_student_links l ON l.student_id = i.student_id
+          WHERE l.parent_user_id = ?
+            AND i.amount > COALESCE((SELECT SUM(p.amount) FROM spp_payments p WHERE p.invoice_id = i.id), 0)
+        `).get(uid);
+        const n = Number(row && row.n) || 0;
+        if (n > 0) {
+          items.push({
+            type: 'spp',
+            icon: '💰',
+            title: 'Tagihan SPP belum lunas',
+            text: `${n} tagihan SPP anak belum lunas`,
+            link: '#/ortu/tagihan',
+            at: iso(now),
+            unread: true,
+            count: n
+          });
+        }
+      } catch (e) {
+        console.error('Notif tagihan:', e.message);
+      }
+    }
+
     // 3. Pengaduan
     try {
       const tbl = await findTable(['complaints', 'pengaduan', 'complaint']);
       if (tbl) {
         const c = await colsOf(tbl);
 
-        if ((role === 'siswa' || role === 'guru') && c.has('user_id') && c.has('response')) {
+        if ((role === 'siswa' || role === 'guru' || role === 'orang_tua') && c.has('user_id') && c.has('response')) {
           const ts = pick(c, ['responded_at', 'updated_at']);
           if (ts) {
             const rows = await db.prepare(`

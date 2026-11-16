@@ -134,17 +134,19 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     orang_tua: [
       ['dash', '🏠 Dashboard'],
       ['ortu', '👨‍👩‍👧 Portal Anak'],
+      ['akademik', '🎓 Akademik'],
+      ['pengaduan', '📬 Layanan Pengaduan'],
       ['news', '📢 Pengumuman'],
       ['akun', '👤 Akun']
     ]
   };
 
   function renderLogin(msg = '') {
-    document.title = 'Masuk - SIAKAD sekolah OBE 85';
+    document.title = 'Masuk - SIAKAD OBE Sekolah';
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-hero">
-          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD Sekolah OBE 85</span></div>
+          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
           <h1>Sistem Informasi Akademik<br>Berbasis Capaian Pembelajaran</h1>
           <p>Pantau kurikulum, penilaian, dan refleksi pembelajaran dalam satu tempat.</p>
           <ul>
@@ -175,7 +177,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   function renderForceChange() {
     document.title = 'Buat Password Baru';
     app.innerHTML = `
-      <div class="login-wrap"><section class="login-hero"><div class="brand"><span class="brand-mark">S</span><span>SIAKAD Sekolah OBE 85</span></div>
+      <div class="login-wrap"><section class="login-hero"><div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
       <h1>Buat password baru</h1><p>Demi keamanan, Anda wajib mengganti password awal sebelum melanjutkan.</p></section>
       <section class="login-panel"><div class="login-box"><h2>Ganti Password</h2>
       <form class="form" data-form="changePw" style="margin-top:1rem">
@@ -271,7 +273,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     const home = homeHtml(ring) + chartsHtml(grafik);
     return `
       <div style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
-        <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah 85.</p></div>
+        <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
         <span style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
@@ -486,6 +488,13 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       <div class="card">${list.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p>${delBtn('/admin/announcements/' + n.id)}</div>`).join('') || '<p class="muted">Belum ada pengumuman.</p>'}</div>`;
   }
 
+  // Pengumuman khusus baca (tanpa form terbitkan dan tombol hapus) untuk selain admin
+  async function newsReadView() {
+    const list = await api('/announcements');
+    return `<h1>Pengumuman</h1>
+      <div class="card">${list.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p></div>`).join('') || '<p class="muted">Belum ada pengumuman.</p>'}</div>`;
+  }
+
   async function myClasses() {
     const list = await api('/guru/teaching');
     const cards = list.length
@@ -544,8 +553,13 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   async function reportView() {
     const r = await api('/siswa/report');
     const head = `<h1>Nilai & Capaian</h1><p><button class="btn" data-action="bukaRapor" data-url="/siswa/rapor">🖨️ Cetak E-Rapor</button></p><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
-    if (!r.subjects.length) return head + '<div class="card"><p class="muted">Belum ada mata pelajaran.</p></div>';
-    return head + r.subjects.map((s) => `<div class="card"><h2>${esc(s.subject)} - ${esc(s.teacher)}</h2><p>Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
+    return head + reportCards(r);
+  }
+
+  // Kartu nilai per mata pelajaran (dipakai halaman siswa dan portal orang tua)
+  function reportCards(r) {
+    if (!r.subjects.length) return '<div class="card"><p class="muted">Belum ada mata pelajaran.</p></div>';
+    return r.subjects.map((s) => `<div class="card"><h2>${esc(s.subject)} - ${esc(s.teacher)}</h2><p>Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
       <table><thead><tr><th>CP</th><th>Deskripsi</th><th>Capaian</th></tr></thead><tbody>${s.outcomes.map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td>${bar(o.score, r.kkm)}</td></tr>`).join('')}</tbody></table></div>`).join('');
   }
 
@@ -639,7 +653,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
 
   // ---------- LAYANAN PENGADUAN ----------
   async function pengaduanView(sub = 'semua') {
-    if (me.role === 'siswa' || me.role === 'guru') {
+    if (me.role === 'siswa' || me.role === 'guru' || me.role === 'orang_tua') {
       const d = await api('/portal/pengaduan/saya');
       const list = d.rows.length
         ? d.rows.map((c) => `<div class="news"><div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(c.subject)}</h3>${csPill(c.status)}</div>
@@ -1427,7 +1441,7 @@ const QUICK_EXTRA = {
       </div>
       <div class="rapor-paper">
         <h2>LAPORAN HASIL BELAJAR (E-RAPOR)</h2>
-        <p class="rapor-sub">SIAKAD Sekolah OBE 85</p>
+        <p class="rapor-sub">SIAKAD OBE Sekolah</p>
         <table class="rapor-id"><tbody>
           <tr><td style="width:90px">Nama</td><td>: <b>${esc(d.student.name)}</b></td><td style="width:90px">Kelas</td><td>: ${esc(d.student.class_name)}</td></tr>
           <tr><td>NIS</td><td>: ${esc(d.student.nis || '-')}</td><td>Semester</td><td>: ${esc(d.semester || '-')}</td></tr>
@@ -2067,37 +2081,116 @@ async function keuanganView() {
       `;
     }
   }
-async function orangTuaView() {
-  try {
-    const data = await api('/portal/orang-tua/anak');
+  // ================= PORTAL ORANG TUA =================
+  const rupiahOrtu = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 
-    if (!data || !data.length) {
-      return `
-        <div class="card">
-          <h2>👨‍👩‍👧 Portal Anak</h2>
-          <p>Belum ada data siswa yang terhubung dengan akun ini.</p>
-        </div>
-      `;
+  // Alamat: #/ortu/<tab>/<id anak>  (mis. #/ortu/nilai/12). Tanpa id anak = anak pertama.
+  async function orangTuaView(sub, sid) {
+    const head = '<h1>👨‍👩‍👧 Portal Anak</h1>';
+    const kids = await api('/ortu/anak');
+
+    if (!kids || !kids.length) {
+      return head + '<div class="card"><p class="muted">Belum ada data siswa yang terhubung dengan akun ini. Hubungi admin sekolah.</p></div>';
     }
 
-    return `
-      <div class="page-head">
-        <h2>👨‍👩‍👧 Portal Anak</h2>
-        <p>Pantau informasi pendidikan anak Anda.</p>
-      </div>
+    const TABS = [['nilai', '📈 Nilai'], ['kehadiran', '🗓️ Kehadiran'], ['tagihan', '💰 Tagihan SPP'], ['izin', '📝 Perizinan']];
+    const tab = TABS.some(([k]) => k === sub) ? sub : 'nilai';
+    const kid = kids.find((k) => String(k.student_id) === String(sid)) || kids[0];
 
-      ${data.map(s => `
-        <div class="card" style="margin-bottom:1rem">
-          <h3>${esc(s.name || '-')}</h3>
-          <p>NIS: ${esc(s.nis || '-')}</p>
-          <p>Kelas: ${esc(s.class_name || '-')}</p>
-        </div>
-      `).join('')}
-    `;
-  } catch (e) {
-    throw e;
+    const picker = kids.length > 1
+      ? `<div class="tabs">${kids.map((k) => `<a href="#/ortu/${tab}/${k.student_id}" class="${k.student_id === kid.student_id ? 'on' : ''}">👤 ${esc(k.name)}</a>`).join('')}</div>`
+      : '';
+    const info = `<div class="card"><h2>${esc(kid.name)}</h2>
+      <p class="muted">NIS ${esc(kid.nis || '-')} &bull; Kelas ${esc(kid.class_name || '-')} &bull; ${esc(kid.relationship || 'Orang Tua/Wali')}</p></div>`;
+    const tabBar = `<div class="tabs">${TABS.map(([k, l]) => `<a href="#/ortu/${k}/${kid.student_id}" class="${k === tab ? 'on' : ''}">${l}</a>`).join('')}</div>`;
+
+    const body = await ({ nilai: ortuNilaiTab, kehadiran: ortuHadirTab, tagihan: ortuTagihanTab, izin: ortuIzinTab }[tab])(kid);
+    return head + picker + info + tabBar + body;
   }
-}
+
+  async function ortuNilaiTab(kid) {
+    const r = await api(`/ortu/anak/${kid.student_id}/nilai`);
+    return `<p><button class="btn" data-action="bukaRapor" data-url="/ortu/anak/${kid.student_id}/rapor">🖨️ Cetak E-Rapor</button>
+      <span class="muted small">KKM ${r.kkm}</span></p>` + reportCards(r);
+  }
+
+  async function ortuHadirTab(kid) {
+    const d = await api(`/ortu/anak/${kid.student_id}/kehadiran`);
+    const s = d.summary;
+    const total = s.hadir + s.izin + s.sakit + s.alpa;
+    const pct = total ? Math.round((s.hadir / total) * 100) : null;
+    const rows = d.rows.length
+      ? d.rows.map((r) => `<tr><td>${fday(r.date)}</td><td>${esc(r.subject_name)}</td><td>${statusPill(r.status)}</td><td>${esc(r.note || '')}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="muted">Belum ada data kehadiran.</td></tr>';
+    return `<div class="cards">${statCard('Hadir', s.hadir)}${statCard('Izin', s.izin)}${statCard('Sakit', s.sakit)}${statCard('Alpa', s.alpa)}${statCard('% Kehadiran', pct == null ? '-' : pct + '%')}</div>
+      <div class="card"><h2>Riwayat Kehadiran</h2><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Mata Pelajaran</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  async function ortuTagihanTab(kid) {
+    const base = `/ortu/anak/${kid.student_id}/tagihan`;
+    const d = await api(base);
+    if (!d.rows.length) return '<div class="card"><p class="muted">Belum ada tagihan SPP untuk anak ini.</p></div>';
+
+    const rows = d.rows.map((i) => {
+      const id = Number(i.id);
+      const total = Number(i.amount || 0);
+      const paid = Number(i.amount_paid || 0);
+      const remaining = Math.max(0, total - paid);
+      const waiting = i.last_proof_status === 'menunggu';
+
+      const proofNote = waiting
+        ? '<br><span class="pill info">Bukti menunggu verifikasi</span>'
+        : (i.last_proof_status === 'ditolak' && remaining > 0)
+          ? '<br><span class="pill low">Bukti terakhir ditolak</span>'
+          : '';
+
+      const form = remaining > 0 && !waiting
+        ? `<div style="margin-top:10px;min-width:190px">
+            <input type="number" data-proof-amount="${id}" min="1" max="${remaining}" placeholder="Nominal transfer" style="width:100%;margin-bottom:6px">
+            <input type="file" data-proof-file="${id}" accept="image/jpeg,image/png,image/webp" style="width:100%;margin-bottom:6px">
+            <input type="text" data-proof-note="${id}" maxlength="300" placeholder="Catatan (opsional)" style="width:100%;margin-bottom:6px">
+            <button type="button" class="btn sm" data-action="uploadBuktiSPP" data-id="${id}" data-base="${base}">📤 Kirim Bukti</button>
+          </div>`
+        : '';
+
+      return `<tr><td>${esc(i.title || '-')}</td><td>${esc(i.period || '-')}</td>
+        <td>${rupiahOrtu(total)}</td><td>${rupiahOrtu(paid)}</td><td>${rupiahOrtu(remaining)}</td>
+        <td>${esc(i.due_date || '-')}</td>
+        <td>${remaining <= 0 ? '<span class="pill ok">Lunas</span>' : '<span class="pill warn">Belum lunas</span>'}${proofNote}</td>
+        <td><button type="button" class="btn sm ghost" data-action="cetakInvoiceSPP" data-id="${id}" data-endpoint="${base}">🖨️ Invoice</button>${form}</td></tr>`;
+    }).join('');
+
+    return `<p class="muted">Setelah transfer, unggah foto bukti pembayaran. Admin akan memverifikasinya dan mencatat pembayaran.</p>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Tagihan</th><th>Periode</th><th>Nominal</th><th>Dibayar</th><th>Sisa</th><th>Jatuh Tempo</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  async function ortuIzinTab(kid) {
+    const url = `/izin/anak/${kid.student_id}`;
+    const d = await api(url);
+    const list = d.rows.length
+      ? d.rows.map((r) => `<div class="news">
+          <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:start"><h3>${esc(IZIN_TYPE[r.type] || r.type)} &bull; ${rangeTxt(r.start_date, r.end_date)}</h3>${izinPill(r.status)}</div>
+          <time>Diajukan ${fdate(r.created_at)}</time>
+          <p>${esc(r.reason)}</p>${lmsLink(r.link)}
+          ${r.review_note ? `<p class="muted small" style="margin-top:.4rem"><b>Catatan wali kelas:</b> ${esc(r.review_note)}</p>` : ''}
+          ${r.status === 'menunggu' ? `<button class="btn sm danger" data-action="del" data-url="${url}/${r.id}" style="margin-top:.5rem">Batalkan Pengajuan</button>` : ''}
+        </div>`).join('')
+      : '<p class="muted">Belum ada pengajuan izin.</p>';
+
+    return `<p class="muted">Ajukan izin atau sakit untuk ${esc(kid.name)} kepada wali kelas. Setelah disetujui, absensinya otomatis tercatat Izin atau Sakit pada hari yang ada pelajarannya.</p>
+      <div class="card"><h2>Ajukan Izin</h2>
+        <form class="form" data-form="post" data-url="${url}">
+          <div class="field"><label>Jenis</label><select name="type"><option value="izin">Izin</option><option value="sakit">Sakit</option></select></div>
+          <div class="field"><label>Tanggal mulai</label><input name="start_date" type="date" value="${esc(d.today)}" required></div>
+          <div class="field"><label>Tanggal selesai</label><input name="end_date" type="date" value="${esc(d.today)}" required></div>
+          <div class="field"><label>Alasan</label><textarea name="reason" required minlength="5" maxlength="500"></textarea></div>
+          <div class="field"><label>Tautan surat / bukti (opsional)</label><input name="link" type="url" maxlength="500" placeholder="https://"></div>
+          <p class="muted small">Satu pengajuan maksimal 14 hari.</p>
+          <div><button class="btn" type="submit">Kirim Pengajuan</button></div>
+        </form></div>
+      <div class="card"><h2>Riwayat Pengajuan</h2>${list}</div>`;
+  }
+
   // ================= DAFTAR TAMPILAN =================
 
   const VIEWS = {
@@ -2142,7 +2235,9 @@ async function orangTuaView() {
     orang_tua: {
       dash,
       ortu: orangTuaView,
-      news: newsView,
+      akademik: akademikView,
+      pengaduan: pengaduanView,
+      news: newsReadView,
       akun: akunView
     }
   };
@@ -3133,7 +3228,10 @@ async uploadBuktiSPP(el) {
     return;
   }
 
-  await api(`/portal/keuangan/saya/${id}/bukti`, 'POST', {
+  // Siswa: alamat bawaan. Orang tua: alamat anak diisi lewat atribut data-base pada tombol.
+  const proofBase = el.dataset.base || '/portal/keuangan/saya';
+
+  await api(`${proofBase}/${id}/bukti`, 'POST', {
     amount,
     proof,
     note
@@ -3159,9 +3257,9 @@ async cetakInvoiceSPP(el) {
   }
 
   try {
-    const endpoint = me?.role === 'siswa'
+    const endpoint = el.dataset.endpoint || (me?.role === 'siswa'
       ? '/portal/keuangan/saya'
-      : '/portal/keuangan';
+      : '/portal/keuangan');
 
     const data = await api(endpoint);
 
@@ -3278,7 +3376,7 @@ async cetakInvoiceSPP(el) {
         <div class="invoice">
 
           <h2>INVOICE TAGIHAN SPP</h2>
-          <p class="subtitle">SIAKAD SEKOLAH OBE 85</p>
+          <p class="subtitle">SIAKAD OBE SEKOLAH</p>
 
           <div class="row">
             <span>Nomor Invoice</span>

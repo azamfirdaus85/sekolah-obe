@@ -67,8 +67,8 @@ router.use(auth);
 
 /* ======================= LAYANAN PENGADUAN ======================= */
 
-// Pengaduan milik sendiri (siswa & guru)
-router.get('/pengaduan/saya', role('siswa', 'guru'), async (req, res) => {
+// Pengaduan milik sendiri (siswa, guru, orang tua)
+router.get('/pengaduan/saya', role('siswa', 'guru', 'orang_tua'), async (req, res) => {
   try {
     const rows = await db.prepare(`
       SELECT id, category, subject, body, status, response, responded_at, created_at
@@ -77,7 +77,7 @@ router.get('/pengaduan/saya', role('siswa', 'guru'), async (req, res) => {
   } catch (e) { fail(res, e, 'Gagal memuat pengaduan'); }
 });
 
-router.post('/pengaduan', role('siswa', 'guru'), async (req, res) => {
+router.post('/pengaduan', role('siswa', 'guru', 'orang_tua'), async (req, res) => {
   try {
     const category = clip(req.body.category, 40);
     const subject = clip(req.body.subject, 120);
@@ -94,7 +94,7 @@ router.post('/pengaduan', role('siswa', 'guru'), async (req, res) => {
 });
 
 // Pelapor boleh menarik pengaduan selama belum ditanggapi
-router.delete('/pengaduan/:id', role('siswa', 'guru'), async (req, res) => {
+router.delete('/pengaduan/:id', role('siswa', 'guru', 'orang_tua'), async (req, res) => {
   try {
     const r = await db.prepare("DELETE FROM complaints WHERE id = ? AND user_id = ? AND status = 'baru'")
       .run(Number(req.params.id), req.user.id);
@@ -218,6 +218,16 @@ router.get('/akademik/jadwal', async (req, res) => {
       if (!me || !me.class_id) return res.json({ rows: [] });
       where = 't.class_id = ?';
       args.push(me.class_id);
+    } else if (req.user.role === 'orang_tua') {
+      // Orang tua hanya melihat jadwal kelas anaknya
+      const kids = await db.prepare(`
+        SELECT DISTINCT s.class_id
+        FROM parent_student_links l
+        JOIN students s ON s.id = l.student_id
+        WHERE l.parent_user_id = ? AND s.class_id IS NOT NULL`).all(req.user.id);
+      if (!kids.length) return res.json({ rows: [] });
+      where = `t.class_id IN (${kids.map(() => '?').join(',')})`;
+      args.push(...kids.map((k) => Number(k.class_id)));
     }
     const rows = await db.prepare(`
       SELECT sch.id, sch.day_of_week, sch.start_time, sch.end_time, sch.room,

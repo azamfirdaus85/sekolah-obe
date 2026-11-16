@@ -64,7 +64,7 @@ router.get('/report', async (req, res) => {
       });
     }
     res.json({ student: me, kkm: KKM, subjects });
-  } catch(e){
+  } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Gagal load laporan: ' + e.message });
   }
