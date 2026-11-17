@@ -516,6 +516,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         <div class="field"><label>Nama kelas</label><input name="name" placeholder="X RPL 1" required></div>
         <div class="field"><label>Tahun ajaran</label><input name="year" placeholder="2026/2027"></div>
         <button class="btn" type="submit">Tambah</button></form></div>
+      <div class="card"><h2>Impor dari Excel</h2><p class="muted small">Unduh template, isi nama kelas dan tahun ajaran, lalu unggah untuk diperiksa sebelum disimpan.</p><div class="actions"><button class="btn ghost" type="button" data-action="simpleImportTemplate" data-kind="classes">Unduh Template Kelas</button></div><form class="form inline" data-form="simpleImport" data-kind="classes"><div class="field"><label>File Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div><button class="btn" type="submit">Baca &amp; Pratinjau</button></form></div>
       <div class="card"><table><thead><tr><th>Kelas</th><th>Tahun</th><th>Wali Kelas</th><th class="num">Siswa</th><th></th></tr></thead><tbody>${list
         .map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.year || '')}</td><td><select data-change="setHomeroom" data-id="${c.id}">${waliOpts(c)}</select></td><td class="num">${c.students}</td><td><div class="actions">${delBtn('/admin/classes/' + c.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
   }
@@ -621,6 +622,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         <div class="field"><label>Kode</label><input name="code" placeholder="MTK" required></div>
         <div class="field"><label>Nama mata pelajaran</label><input name="name" required></div>
         <button class="btn" type="submit">Tambah</button></form></div>
+      <div class="card"><h2>Impor dari Excel</h2><p class="muted small">Kolom wajib: Kode dan Nama mata pelajaran.</p><div class="actions"><button class="btn ghost" type="button" data-action="simpleImportTemplate" data-kind="subjects">Unduh Template Mata Pelajaran</button></div><form class="form inline" data-form="simpleImport" data-kind="subjects"><div class="field"><label>File Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div><button class="btn" type="submit">Baca &amp; Pratinjau</button></form></div>
       <div class="card"><table><thead><tr><th>Kode</th><th>Nama</th><th></th></tr></thead><tbody>${list
         .map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td><div class="actions">${delBtn('/admin/subjects/' + s.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
   }
@@ -634,6 +636,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         <div class="field"><label>Guru</label><select name="teacher_id" required>${opts(users, 'id', (u) => u.name, 'Pilih')}</select></div>
         <div class="field"><label>Semester (kosong = periode aktif)</label><input name="semester" placeholder="Otomatis"></div>
         <button class="btn" type="submit">Tambah</button></form></div>
+      <div class="card"><h2>Impor dari Excel</h2><p class="muted small">Gunakan nama mapel, kelas, dan guru yang sudah terdaftar. Semester boleh dikosongkan untuk memakai periode aktif.</p><div class="actions"><button class="btn ghost" type="button" data-action="simpleImportTemplate" data-kind="teaching">Unduh Template Kelas Ajar</button></div><form class="form inline" data-form="simpleImport" data-kind="teaching"><div class="field"><label>File Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div><button class="btn" type="submit">Baca &amp; Pratinjau</button></form></div>
       <div class="card"><table><thead><tr><th>Mapel</th><th>Kelas</th><th>Guru</th><th>Semester</th><th></th></tr></thead><tbody>${list
         .map((t) => `<tr><td>${esc(t.subject_name)}</td><td>${esc(t.class_name)}</td><td>${esc(t.teacher_name)}</td><td>${esc(t.semester)}</td><td><div class="actions">${delBtn('/admin/teaching/' + t.id)}</div></td></tr>`).join('')}</tbody></table></div>`;
   }
@@ -1008,6 +1011,145 @@ const QUICK_EXTRA = {
   }
 
   const DAYS = [[1, 'Senin'], [2, 'Selasa'], [3, 'Rabu'], [4, 'Kamis'], [5, 'Jumat'], [6, 'Sabtu'], [7, 'Minggu']];
+  /* ---------- IMPOR JADWAL DARI EXCEL (dibaca di browser, disimpan lewat /dashboard/jadwal) ---------- */
+  let jadwalDraft = [];
+  const XLSX_SRC = ['/vendor/xlsx.full.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];
+  const JADWAL_MAX_ROWS = 300;
+
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise((resolve, reject) => {
+      let i = 0;
+      const next = () => {
+        if (i >= XLSX_SRC.length) return reject(new Error('Pustaka Excel gagal dimuat. Periksa koneksi internet lalu coba lagi.'));
+        const s = document.createElement('script');
+        s.src = XLSX_SRC[i++];
+        s.onload = () => (window.XLSX ? resolve(window.XLSX) : next());
+        s.onerror = () => { s.remove(); next(); };
+        document.head.appendChild(s);
+      };
+      next();
+    });
+  }
+
+  const jNorm = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const JDAY = {
+    senin: 1, monday: 1, selasa: 2, tuesday: 2, rabu: 3, wednesday: 3, kamis: 4, thursday: 4,
+    jumat: 5, friday: 5, sabtu: 6, saturday: 6, minggu: 7, ahad: 7, sunday: 7
+  };
+  const JHEAD = {
+    hari: ['hari', 'day'],
+    mulai: ['mulai', 'jammulai', 'jamawal', 'awal', 'start', 'starttime'],
+    selesai: ['selesai', 'jamselesai', 'jamakhir', 'akhir', 'end', 'endtime'],
+    mapel: ['mapel', 'matapelajaran', 'pelajaran', 'subject'],
+    kelas: ['kelas', 'class'],
+    guru: ['guru', 'pengajar', 'teacher'],
+    ruang: ['ruang', 'ruangan', 'room']
+  };
+
+  function jParseDay(v) {
+    const n = jNorm(v);
+    if (/^[1-7]$/.test(n)) return Number(n);
+    return JDAY[n] || null;
+  }
+  // Terima "07:30", "7.30", "07:30:00" atau sel waktu Excel (pecahan hari)
+  function jParseTime(v) {
+    let min = null;
+    if (typeof v === 'number') {
+      if (v >= 0 && v < 1) min = Math.round(v * 1440);
+    } else {
+      const m = /^(\d{1,2})[:.](\d{2})(?::\d{2})?$/.exec(String(v ?? '').trim());
+      if (m) min = Number(m[1]) * 60 + Number(m[2]);
+    }
+    if (min == null || min < 0 || min >= 1440 || min % 60 > 59) return null;
+    return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+  }
+  const jMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  const jDayName = (n) => (DAYS.find((d) => d[0] === n) || [n, '-'])[1];
+
+  // Ubah isi sheet menjadi baris {row, hari, mulai, selesai, mapel, kelas, guru, ruang}
+  function jReadRows(X, wb) {
+    const ws = wb.Sheets['Jadwal'] || wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new Error('File Excel kosong.');
+    const raw = X.utils.sheet_to_json(ws, { defval: '', raw: true });
+    const out = [];
+    raw.forEach((r, i) => {
+      const o = { row: i + 2 };
+      Object.keys(r).forEach((k) => {
+        const nk = jNorm(k);
+        const f = Object.keys(JHEAD).find((key) => JHEAD[key].includes(nk));
+        if (f) o[f] = r[k];
+      });
+      const filled = ['hari', 'mulai', 'selesai', 'mapel', 'kelas', 'guru', 'ruang'].some((k) => String(o[k] ?? '').trim() !== '');
+      if (filled) out.push(o);
+    });
+    return out;
+  }
+
+  // Cocokkan tiap baris dengan kelas ajar, cek jam, duplikat, dan bentrok
+  function jEvaluate(rows, teaching, existing) {
+    const byKey = new Map();
+    teaching.forEach((t) => {
+      const k = jNorm(t.subject_name) + '|' + jNorm(t.class_name);
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(t);
+    });
+    const taken = existing.map((e) => ({ ...e }));
+    return rows.map((r) => {
+      const res = { row: r.row, hari: String(r.hari ?? '').trim(), mapel: String(r.mapel ?? '').trim(), kelas: String(r.kelas ?? '').trim(), ruang: String(r.ruang ?? '').trim(), status: 'err', msg: '' };
+      const day = jParseDay(r.hari);
+      const s = jParseTime(r.mulai);
+      const e = jParseTime(r.selesai);
+      res.jam = (s || String(r.mulai ?? '').trim() || '?') + ' - ' + (e || String(r.selesai ?? '').trim() || '?');
+      if (!day) { res.msg = 'Hari tidak dikenali (isi Senin-Minggu).'; return res; }
+      res.hari = jDayName(day);
+      if (!s) { res.msg = 'Jam mulai tidak valid (contoh 07:30).'; return res; }
+      if (!e) { res.msg = 'Jam selesai tidak valid (contoh 08:30).'; return res; }
+      if (jMin(e) <= jMin(s)) { res.msg = 'Jam selesai harus setelah jam mulai.'; return res; }
+      if (!jNorm(r.mapel) || !jNorm(r.kelas)) { res.msg = 'Mapel dan Kelas wajib diisi.'; return res; }
+
+      let cand = byKey.get(jNorm(r.mapel) + '|' + jNorm(r.kelas)) || [];
+      if (!cand.length) { res.msg = 'Kelas ajar untuk mapel & kelas ini belum ada (lihat sheet Referensi).'; return res; }
+      const g = jNorm(r.guru);
+      if (g) {
+        const f = cand.filter((t) => jNorm(t.teacher_name) === g || jNorm(t.teacher_name).includes(g));
+        if (!f.length) { res.msg = 'Guru tidak sesuai dengan kelas ajar yang terdaftar.'; return res; }
+        cand = f;
+      }
+      if (cand.length > 1) { res.msg = 'Ada lebih dari satu guru untuk mapel & kelas ini, isi kolom Guru.'; return res; }
+      const t = cand[0];
+      res.teaching = t;
+      res.guru = t.teacher_name;
+
+      const cls = jNorm(t.class_name), tch = jNorm(t.teacher_name), sub = jNorm(t.subject_name);
+      const sm = jMin(s), em = jMin(e);
+      const same = taken.find((x) => x.day === day && x.s === sm && x.cls === cls && x.sub === sub && x.tch === tch);
+      if (same) { res.status = 'dup'; res.msg = 'Sudah ada, dilewati.'; return res; }
+      const clash = taken.find((x) => x.day === day && sm < x.e && x.s < em && (x.cls === cls || x.tch === tch));
+      if (clash) {
+        res.msg = `Bentrok dengan ${clash.label} (${String(Math.floor(clash.s / 60)).padStart(2, '0')}:${String(clash.s % 60).padStart(2, '0')}-${String(Math.floor(clash.e / 60)).padStart(2, '0')}:${String(clash.e % 60).padStart(2, '0')}), ${clash.cls === cls ? 'kelas sama' : 'guru sama'}.`;
+        return res;
+      }
+      taken.push({ day, s: sm, e: em, cls, tch, sub, label: `${t.subject_name} ${t.class_name}` });
+      res.status = 'ok';
+      res.msg = 'Siap disimpan';
+      res.save = { row: r.row, teaching_id: t.id, day, start: s, end: e, room: res.ruang };
+      return res;
+    });
+  }
+
+  function jExisting(list) {
+    return list.map((j) => ({
+      day: Number(j.day_of_week) || jParseDay(j.day_name),
+      s: jMin(j.start_time),
+      e: jMin(j.end_time),
+      cls: jNorm(j.class_name),
+      tch: jNorm(j.teacher_name),
+      sub: jNorm(j.subject_name),
+      label: `${j.subject_name} ${j.class_name}`
+    })).filter((x) => x.day && x.s != null && x.e != null);
+  }
+
   async function jadwalAdminView() {
     const [list, teaching] = await Promise.all([api('/dashboard/jadwal'), api('/admin/teaching')]);
     const rows = list.length
@@ -1021,6 +1163,13 @@ const QUICK_EXTRA = {
         <div class="field"><label>Selesai</label><input name="end_time" type="time" required></div>
         <div class="field"><label>Ruang</label><input name="room" maxlength="40" placeholder="Lab 1"></div>
         <button class="btn" type="submit">Tambah</button></form></div>
+      <div class="card"><h2>Impor dari Excel</h2>
+        <p class="muted small" style="margin-bottom:.8rem">Unduh template (sudah berisi daftar mapel, kelas, dan guru yang valid), isi atau tempel jadwal dari Excel Anda, lalu unggah. Anda akan melihat pratinjau dulu sebelum disimpan. Maksimal ${JADWAL_MAX_ROWS} baris per file.</p>
+        <div style="margin-bottom:.8rem"><button class="btn ghost" type="button" data-action="jadwalTemplate">📄 Unduh Template Jadwal</button></div>
+        <form class="form inline" data-form="importJadwal">
+          <div class="field"><label>File Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div>
+          <button class="btn" type="submit">Baca &amp; Pratinjau</button>
+        </form></div>
       <div class="card"><div class="table-wrap"><table><thead><tr><th>Hari</th><th>Jam</th><th>Mapel</th><th>Kelas</th><th>Guru</th><th>Ruang</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
@@ -2708,6 +2857,115 @@ async function keuanganView() {
       route();
     },
 
+    async simpleImport(data, f) {
+      const kind = f.dataset.kind, cfg = SIMPLE_IMPORT[kind];
+      if (!cfg) throw new Error('Jenis impor tidak dikenal.');
+      const file = f.querySelector('input[type=file]').files[0];
+      const btn = f.querySelector('button[type=submit]');
+      const old = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Membaca...';
+      try {
+        const rows = await readSimpleImport(kind, file);
+        const refs = kind === 'teaching' ? {
+          subjects: await api('/admin/subjects'),
+          classes: await api('/admin/classes'),
+          teachers: await api('/admin/users?role=guru')
+        } : {};
+        const existing = await api(cfg.endpoint);
+        const used = new Set(existing.map(cfg.key));
+        const seen = new Set();
+        simpleImportDraft = [];
+        const preview = rows.map(x => {
+          let msg = cfg.validate(x, refs);
+          const key = cfg.key(x);
+          if (!msg && (used.has(key) || seen.has(key))) msg = 'Data sudah ada / duplikat, dilewati.';
+          if (!msg) {
+            seen.add(key);
+            if (kind === 'teaching') {
+              const sub = refs.subjects.find(v => jNorm(v.name) === jNorm(x.subject));
+              const cls = refs.classes.find(v => jNorm(v.name) === jNorm(x.className));
+              const guru = refs.teachers.find(v => jNorm(v.name) === jNorm(x.teacher));
+              x.payload = { subject_id: sub.id, class_id: cls.id, teacher_id: guru.id, semester: x.semester };
+            } else if (kind === 'classes') x.payload = { name: x.name, year: x.year };
+            else x.payload = { code: x.code, name: x.name };
+            x.status = 'ok'; msg = 'Siap disimpan';
+            simpleImportDraft.push({ row: x.row, payload: x.payload, endpoint: cfg.endpoint });
+          } else x.status = msg.startsWith('Data sudah') ? 'dup' : 'err';
+          x.message = msg;
+          return x;
+        });
+        const count = simpleImportDraft.length;
+        const dup = preview.filter(x => x.status === 'dup').length;
+        const bad = preview.filter(x => x.status === 'err').length;
+        const cells = preview.map(x => `<tr><td>${x.row}</td><td>${esc(x.name || x.code || x.subject || '-')}</td><td><span class="pill ${x.status === 'ok' ? 'ok' : x.status === 'dup' ? 'na' : 'low'}">${esc(x.message)}</span></td></tr>`).join('');
+        openModal(`<h2>Pratinjau Impor ${cfg.title}</h2><p>Siap disimpan: <b>${count}</b> | Duplikat: <b>${dup}</b> | Bermasalah: <b>${bad}</b></p>
+          <div style="max-height:360px;overflow:auto;margin:.8rem 0"><table><thead><tr><th>Baris</th><th>Data utama</th><th>Status</th></tr></thead><tbody>${cells}</tbody></table></div>
+          <div class="actions"><button class="btn" data-action="simpleImportSave" ${count ? '' : 'disabled'}>Simpan ${count} data</button><button class="btn ghost" data-action="closeModal">Batal</button></div>`);
+      } finally { btn.disabled = false; btn.textContent = old; }
+    },
+
+    async simpleImportSave(el) {
+      const rows = simpleImportDraft.slice();
+      if (!rows.length) throw new Error('Tidak ada data yang siap disimpan.');
+      el.disabled = true;
+      let ok = 0; const fails = [];
+      for (let i = 0; i < rows.length; i++) {
+        el.textContent = `Menyimpan ${i + 1}/${rows.length}...`;
+        try { await api(rows[i].endpoint, 'POST', rows[i].payload); ok++; }
+        catch (e) { if (e.message === 'Sesi berakhir') return; fails.push({ row: rows[i].row, message: e.message }); }
+      }
+      simpleImportDraft = [];
+      const errors = fails.length ? `<div style="max-height:240px;overflow:auto"><table><thead><tr><th>Baris</th><th>Keterangan</th></tr></thead><tbody>${fails.map(x => `<tr><td>${x.row}</td><td>${esc(x.message)}</td></tr>`).join('')}</tbody></table></div>` : '';
+      openModal(`<h2>Hasil Impor</h2><p>Berhasil: <b>${ok}</b> | Gagal: <b>${fails.length}</b></p>${errors}<div class="actions"><button class="btn" data-action="closeImport">Selesai</button></div>`);
+    },
+
+    async importJadwal(data, f) {
+      const file = f.querySelector('input[type=file]').files[0];
+      if (!file) throw new Error('Pilih file Excel dulu.');
+      if (file.size > 1024 * 1024) throw new Error('File terlalu besar (maksimal 1 MB).');
+
+      const btn = f.querySelector('button[type=submit]');
+      const old = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'Membaca...';
+      try {
+        const X = await loadXlsx();
+        const wb = X.read(await file.arrayBuffer(), { type: 'array' });
+        const rows = jReadRows(X, wb);
+        if (!rows.length) throw new Error('Tidak ada baris jadwal di file. Pastikan judul kolom: Hari, Mulai, Selesai, Mapel, Kelas.');
+        if (rows.length > JADWAL_MAX_ROWS) throw new Error(`Maksimal ${JADWAL_MAX_ROWS} baris per file (file Anda ${rows.length} baris).`);
+
+        const [teaching, list] = await Promise.all([api('/admin/teaching'), api('/dashboard/jadwal')]);
+        const res = jEvaluate(rows, teaching, jExisting(list));
+        jadwalDraft = res.filter((x) => x.status === 'ok').map((x) => x.save);
+
+        const nOk = jadwalDraft.length;
+        const nDup = res.filter((x) => x.status === 'dup').length;
+        const nErr = res.filter((x) => x.status === 'err').length;
+        const cls = { ok: 'ok', dup: 'na', err: 'low' };
+        const body = res.map((x) => `<tr>
+          <td>${x.row}</td><td>${esc(x.hari || '-')}</td><td>${esc(x.jam)}</td>
+          <td>${esc(x.mapel || '-')}</td><td>${esc(x.kelas || '-')}</td><td>${esc(x.guru || '-')}</td>
+          <td><span class="pill ${cls[x.status]}">${esc(x.msg)}</span></td></tr>`).join('');
+
+        openModal(`
+          <h2>Pratinjau Impor Jadwal</h2>
+          <p>Siap disimpan: <b>${nOk}</b> | Sudah ada (dilewati): <b>${nDup}</b> | Bermasalah: <b>${nErr}</b></p>
+          ${nErr ? '<p class="muted small">Baris bermasalah tidak akan disimpan. Perbaiki di Excel lalu impor ulang, atau lanjutkan untuk menyimpan baris yang siap saja.</p>' : ''}
+          <div style="max-height:360px;overflow:auto;margin:.8rem 0">
+            <table><thead><tr><th>Baris</th><th>Hari</th><th>Jam</th><th>Mapel</th><th>Kelas</th><th>Guru</th><th>Status</th></tr></thead>
+            <tbody>${body}</tbody></table>
+          </div>
+          <div class="actions">
+            <button class="btn" data-action="jadwalImportSave" ${nOk ? '' : 'disabled'}>Simpan ${nOk} jadwal</button>
+            <button class="btn ghost" data-action="closeModal">Batal</button>
+          </div>`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = old;
+      }
+    },
+
     async importUsers(data, f) {
       const file = f.querySelector('input[type=file]').files[0];
 
@@ -2853,6 +3111,71 @@ async function keuanganView() {
   // Catatan: endpoint bertanda "TEBAKAN" disusun dari pola penamaan di file ini.
   // Kalau ada yang error 404, cocokkan dengan route di server.
 
+
+  // ---------- Impor Excel untuk Kelas, Mapel, dan Kelas Ajar ----------
+  const SIMPLE_IMPORT = {
+    classes: {
+      title: 'Kelas', sheet: 'Kelas', headers: ['Nama Kelas', 'Tahun Ajaran'],
+      sample: ['X RPL 1', '2026/2027'],
+      fields: ['name', 'year'], endpoint: '/admin/classes',
+      read: (r) => ({ name: String(r['Nama Kelas'] ?? r['Kelas'] ?? '').trim(), year: String(r['Tahun Ajaran'] ?? r['Tahun'] ?? '').trim() }),
+      key: (x) => jNorm(x.name) + '|' + jNorm(x.year),
+      validate: (x) => x.name ? '' : 'Nama kelas wajib diisi.'
+    },
+    subjects: {
+      title: 'Mata Pelajaran', sheet: 'MataPelajaran', headers: ['Kode', 'Nama Mata Pelajaran'],
+      sample: ['MTK', 'Matematika'],
+      endpoint: '/admin/subjects',
+      read: (r) => ({ code: String(r['Kode'] ?? '').trim(), name: String(r['Nama Mata Pelajaran'] ?? r['Nama'] ?? '').trim() }),
+      key: (x) => jNorm(x.code),
+      validate: (x) => !x.code ? 'Kode wajib diisi.' : !x.name ? 'Nama mata pelajaran wajib diisi.' : ''
+    },
+    teaching: {
+      title: 'Kelas Ajar', sheet: 'KelasAjar', headers: ['Mata Pelajaran', 'Kelas', 'Guru', 'Semester'],
+      sample: ['Matematika', 'X RPL 1', 'Nama Guru', 'Ganjil 2026/2027'],
+      endpoint: '/admin/teaching',
+      read: (r) => ({ subject: String(r['Mata Pelajaran'] ?? r['Mapel'] ?? '').trim(), className: String(r['Kelas'] ?? '').trim(), teacher: String(r['Guru'] ?? '').trim(), semester: String(r['Semester'] ?? '').trim() }),
+      key: (x) => [x.subject, x.className, x.teacher, x.semester].map(jNorm).join('|'),
+      validate: (x, refs) => !x.subject || !x.className || !x.teacher ? 'Mapel, kelas, dan guru wajib diisi.' :
+        !refs.subjects.some(v => jNorm(v.name) === jNorm(x.subject)) ? 'Mata pelajaran belum terdaftar.' :
+        !refs.classes.some(v => jNorm(v.name) === jNorm(x.className)) ? 'Kelas belum terdaftar.' :
+        !refs.teachers.some(v => jNorm(v.name) === jNorm(x.teacher)) ? 'Guru belum terdaftar.' : ''
+    }
+  };
+  let simpleImportDraft = [];
+
+  async function readSimpleImport(kind, file) {
+    const cfg = SIMPLE_IMPORT[kind];
+    if (!cfg) throw new Error('Jenis impor tidak dikenal.');
+    if (!file) throw new Error('Pilih file Excel terlebih dahulu.');
+    if (file.size > 1024 * 1024) throw new Error('Ukuran file maksimal 1 MB.');
+    const X = await loadXlsx();
+    const wb = X.read(await file.arrayBuffer(), { type: 'array' });
+    const ws = wb.Sheets[cfg.sheet] || wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new Error('File Excel kosong.');
+    const raw = X.utils.sheet_to_json(ws, { defval: '', raw: false });
+    if (!raw.length) throw new Error('Tidak ada data pada file Excel.');
+    if (raw.length > 500) throw new Error('Maksimal 500 baris per file.');
+    const rows = raw.map((r, i) => ({ row: i + 2, ...cfg.read(r) }))
+      .filter(x => Object.keys(x).some(k => k !== 'row' && String(x[k] ?? '').trim()));
+    if (!rows.length) throw new Error('Tidak ada baris data yang terisi.');
+    return rows;
+  }
+
+  async function simpleImportTemplate(el) {
+    const kind = el.dataset.kind, cfg = SIMPLE_IMPORT[kind];
+    if (!cfg) throw new Error('Template tidak dikenal.');
+    const X = await loadXlsx();
+    const ws = X.utils.aoa_to_sheet([cfg.headers, cfg.sample]);
+    ws['!cols'] = cfg.headers.map(h => ({ wch: Math.max(18, h.length + 5) }));
+    const info = X.utils.aoa_to_sheet([['PETUNJUK'], ['Isi satu data pada setiap baris. Jangan mengubah judul kolom.'], ['Hapus baris contoh sebelum mengisi data sebenarnya.']]);
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, cfg.sheet);
+    X.utils.book_append_sheet(wb, info, 'Petunjuk');
+    X.writeFile(wb, `template-impor-${kind}.xlsx`);
+    toast('Template berhasil diunduh.');
+  }
+
   const ACTIONS = {
 
     // ---------- Tampilan umum ----------
@@ -2878,6 +3201,78 @@ async function keuanganView() {
 
     closeModal() {
       closeModal();
+    },
+
+    async simpleImportTemplate(el) { return simpleImportTemplate(el); },
+
+    async jadwalTemplate(el) {
+      const old = el.textContent;
+      el.disabled = true;
+      el.textContent = 'Menyiapkan...';
+      try {
+        const X = await loadXlsx();
+        const teaching = await api('/admin/teaching');
+        const head = ['Hari', 'Mulai', 'Selesai', 'Mapel', 'Kelas', 'Guru', 'Ruang'];
+        const contoh = teaching.slice(0, 2).map((t, i) => [i ? 'Selasa' : 'Senin', '07:00', '08:30', t.subject_name, t.class_name, t.teacher_name, i ? '' : 'Lab 1']);
+        const ws = X.utils.aoa_to_sheet([head, ...contoh]);
+        ws['!cols'] = [{ wch: 10 }, { wch: 9 }, { wch: 9 }, { wch: 28 }, { wch: 14 }, { wch: 26 }, { wch: 12 }];
+        const ref = X.utils.aoa_to_sheet([['Mapel', 'Kelas', 'Guru'], ...teaching.map((t) => [t.subject_name, t.class_name, t.teacher_name])]);
+        ref['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 28 }];
+        const info = X.utils.aoa_to_sheet([
+          ['PETUNJUK'],
+          ['1. Isi sheet "Jadwal". Hapus dua baris contoh jika tidak dipakai.'],
+          ['2. Hari: Senin sampai Minggu (atau angka 1-7).'],
+          ['3. Mulai / Selesai: format jam 24 jam, contoh 07:30.'],
+          ['4. Mapel dan Kelas harus sama dengan sheet "Referensi" (huruf besar/kecil tidak masalah).'],
+          ['5. Guru boleh dikosongkan; wajib diisi hanya jika satu mapel & kelas diajar lebih dari satu guru.'],
+          ['6. Ruang opsional.'],
+          ['7. Jadwal yang sudah ada dilewati; jadwal yang bentrok (kelas atau guru sama pada jam beririsan) tidak disimpan.']
+        ]);
+        info['!cols'] = [{ wch: 95 }];
+        const wb = X.utils.book_new();
+        X.utils.book_append_sheet(wb, ws, 'Jadwal');
+        X.utils.book_append_sheet(wb, ref, 'Referensi');
+        X.utils.book_append_sheet(wb, info, 'Petunjuk');
+        X.writeFile(wb, 'template-jadwal-pelajaran.xlsx');
+        toast('Template berhasil diunduh');
+      } finally {
+        el.disabled = false;
+        el.textContent = old;
+      }
+    },
+
+    async jadwalImportSave(el) {
+      const rows = jadwalDraft.slice();
+      if (!rows.length) throw new Error('Tidak ada jadwal yang siap disimpan.');
+      el.disabled = true;
+      let ok = 0;
+      const fails = [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        el.textContent = `Menyimpan ${i + 1}/${rows.length}...`;
+        try {
+          await api('/dashboard/jadwal', 'POST', {
+            teaching_id: String(r.teaching_id),
+            day_of_week: String(r.day),
+            start_time: r.start,
+            end_time: r.end,
+            room: r.room
+          });
+          ok++;
+        } catch (e) {
+          if (e.message === 'Sesi berakhir') return;
+          fails.push({ row: r.row, message: e.message });
+        }
+      }
+      jadwalDraft = [];
+      const list = fails.length
+        ? `<div style="max-height:260px;overflow:auto;margin:.8rem 0"><table><thead><tr><th>Baris</th><th>Keterangan</th></tr></thead><tbody>${fails.map((x) => `<tr><td>${x.row}</td><td>${esc(x.message)}</td></tr>`).join('')}</tbody></table></div>`
+        : '';
+      openModal(`
+        <h2>Hasil Impor Jadwal</h2>
+        <p>Berhasil: <b>${ok}</b> | Gagal: <b>${fails.length}</b></p>
+        ${list}
+        <div class="actions"><button class="btn" data-action="closeImport">Selesai</button></div>`);
     },
 
     closeImport() {
