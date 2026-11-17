@@ -1281,3 +1281,27 @@ html body .shell .side .side-actions .btn.ghost{
   }
   html body .shell .side.open{box-shadow:14px 0 44px rgba(60,40,5,.38) !important}
 }
+
+
+/* =====================================================================
+   HP: tidak ada yang terpotong, kalau tidak muat bisa digeser
+   - Menu samping: kalau layar terlalu pendek (misalnya HP dimiringkan),
+     seluruh menu bisa digeser ke bawah sampai tombol Keluar terlihat.
+   - Tabel dan konten lebar di dalam kartu bisa digeser ke samping,
+     tidak lagi terpotong oleh tepi kartu.
+   ===================================================================== */
+@media (max-width: 900px) {
+  html body .shell .side{
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+  html body .shell .side nav{min-height:240px}
+  html body .shell .side .brand,
+  html body .shell .side .side-user,
+  html body .shell .side .side-actions{flex-shrink:0}
+
+  .card{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .main,.content{min-width:0;max-width:100%}
+}
