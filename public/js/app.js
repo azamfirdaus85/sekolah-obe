@@ -263,7 +263,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   }
 
   function layout(content, active) {
-    const menu = MENUS[me.role].map(([k, l]) => `<a href="#/${k}" class="${active === k ? 'on' : ''}">${l}</a>`).join('');
+    const menu = MENUS[me.role].map(([k, l]) => { const [ic, tx] = splitIcon(l); return `<a href="#/${k}" class="${active === k ? 'on' : ''}"><span class="nav-ic">${ic}</span><span class="nav-tx">${tx}</span></a>`; }).join('');
     return `
       <div class="shell">
         <aside class="side" id="side">
@@ -278,8 +278,8 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
             <p style="font-size:.75rem;color:#94a3b8">Hubungi Admin Sekolah untuk reset password.</p>
           </div>
           <div class="side-actions">
-            <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
-            <button class="btn sm" data-action="logout">Keluar →</button>
+            <button class="btn sm ghost sa-pw" data-action="pw"><span>🔑</span><span>Ganti Password</span></button>
+            <button class="btn sm sa-out" data-action="logout"><span>Keluar</span><span>→</span></button>
           </div>
         </aside>
         <div class="main">
