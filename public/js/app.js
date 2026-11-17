@@ -141,51 +141,125 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     ]
   };
 
+  // ---------- Tampilan login ----------
+  const LG_SVG = (inner) => `<svg viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`;
+  const LG_ICON = {
+    user: LG_SVG('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+    lock: LG_SVG('<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+    eyeOn: LG_SVG('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+    eyeOff: LG_SVG('<path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.5 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
+    arrow: LG_SVG('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+    shield: LG_SVG('<path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>'),
+    target: LG_SVG('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>'),
+    chart: LG_SVG('<path d="M5 20v-7M12 20V5M19 20v-10"/>'),
+    chat: LG_SVG('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>'),
+    layers: LG_SVG('<path d="M12 3L3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/>')
+  };
+
+  const lgEye = `<button type="button" class="lg-eye" data-action="togglePw" aria-pressed="false" aria-label="Tampilkan password">
+    <span class="e-on">${LG_ICON.eyeOn}</span><span class="e-off">${LG_ICON.eyeOff}</span></button>`;
+
+  // Kerangka bersama untuk halaman masuk dan halaman ganti password wajib
+  function loginShell({ title, sub, card }) {
+    return `
+      <div class="lg">
+        <div class="lg-bg" aria-hidden="true"><i class="lg-orb o1"></i><i class="lg-orb o2"></i><i class="lg-orb o3"></i><div class="lg-pattern"></div></div>
+        <main class="lg-grid">
+          <section class="lg-hero">
+            <div class="lg-brand"><span class="brand-mark lg-mark">S</span><div><b>SIAKAD OBE</b><small>Sekolah &bull; Outcome Based Education</small></div></div>
+            <div class="lg-hero-body">
+              <h1 class="lg-title">${title}</h1>
+              <p class="lg-sub">${sub}</p>
+              <div class="lg-preview" aria-hidden="true">
+                <div class="lg-pc pc-ring">
+                  <div class="pc-top"><span class="pc-label">Ketuntasan CP</span><span class="pc-tag">Pratinjau</span></div>
+                  <div class="pc-ringwrap"><svg viewBox="0 0 36 36"><circle class="rg-bg" cx="18" cy="18" r="15.9155"/><circle class="rg-fg" cx="18" cy="18" r="15.9155" stroke-dasharray="87 100"/></svg><b>87<small>%</small></b></div>
+                  <p class="pc-note">Rata-rata ketuntasan siswa</p>
+                </div>
+                <div class="lg-pc pc-bars">
+                  <span class="pc-label">Kehadiran 7 Hari</span>
+                  <div class="pc-barsrow"><i style="--h:58%"></i><i style="--h:72%"></i><i style="--h:66%"></i><i style="--h:88%"></i><i style="--h:80%"></i><i style="--h:94%"></i><i style="--h:100%"></i></div>
+                  <p class="pc-big">96%<small> hadir</small></p>
+                </div>
+                <div class="lg-pc pc-sched">
+                  <span class="pc-label">Jadwal Hari Ini</span>
+                  <div class="pc-row live"><b>07:00</b><span>Bahasa Indonesia<small>X IPA 1</small></span><em>Berlangsung</em></div>
+                  <div class="pc-row"><b>08:00</b><span>Pendidikan Agama Islam<small>X IPA 1</small></span></div>
+                </div>
+              </div>
+            </div>
+            <ul class="lg-feats">
+              <li><span>${LG_ICON.target}</span>Monitoring Capaian Pembelajaran</li>
+              <li><span>${LG_ICON.chart}</span>Analisis Penilaian &amp; Ketuntasan</li>
+              <li><span>${LG_ICON.chat}</span>Refleksi Pembelajaran per Kelas</li>
+              <li><span>${LG_ICON.layers}</span>Manajemen Guru, Siswa, dan Kelas</li>
+            </ul>
+          </section>
+          <section class="lg-side">
+            <div class="lg-mbrand">
+              <span class="brand-mark lg-mark">S</span>
+              <b>SIAKAD OBE Sekolah</b>
+              <small>Sistem Informasi Akademik Berbasis Capaian Pembelajaran</small>
+            </div>
+            ${card}
+            <ul class="lg-chips"><li>Capaian Pembelajaran</li><li>Absensi</li><li>E-Rapor</li><li>Tagihan SPP</li></ul>
+            <p class="lg-foot">&copy; ${new Date().getFullYear()} SIAKAD OBE Sekolah</p>
+          </section>
+        </main>
+      </div>`;
+  }
+
   function renderLogin(msg = '') {
     document.title = 'Masuk - SIAKAD OBE Sekolah';
-    app.innerHTML = `
-      <div class="login-wrap">
-        <section class="login-hero">
-          <div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
-          <h1>Sistem Informasi Akademik<br>Berbasis Capaian Pembelajaran</h1>
-          <p>Pantau kurikulum, penilaian, dan refleksi pembelajaran dalam satu tempat.</p>
-          <ul>
-            <li>Monitoring Capaian Pembelajaran (CP)</li>
-            <li>Analisis Penilaian &amp; Ketuntasan Siswa</li>
-            <li>Refleksi Pembelajaran per Kelas Ajar</li>
-            <li>Manajemen Guru, Siswa, dan Kelas</li>
-          </ul>
-        </section>
-        <section class="login-panel">
-          <div class="login-box">
-            <h2>Masuk ke Sistem</h2>
-            <p class="muted small" style="margin-bottom:1rem">Siswa memakai NIS sebagai username.</p>
-            <form class="form" data-form="login">
-              <div class="field"><label>Username</label><input name="username" required></div>
-              <div class="field"><label>Password</label><input name="password" type="password" required></div>
-              <p class="form-msg">${esc(msg)}</p>
-              <button class="btn full" type="submit">Masuk</button>
-              <button type="button" class="btn ghost full" data-action="forgotPw" style="margin-top:10px">
-                Lupa Password?
-              </button>
-            </form>
-          </div>
-        </section>
-      </div>`;
+    app.innerHTML = loginShell({
+      title: 'Pantau capaian belajar, <em>lebih jelas</em> dan terukur.',
+      sub: 'Kurikulum, penilaian, absensi, hingga refleksi pembelajaran, semuanya dalam satu tempat.',
+      card: `
+        <div class="lg-card">
+          <span class="lg-badge">${LG_ICON.shield}Portal Sekolah</span>
+          <h2>Masuk ke Sistem</h2>
+          <p class="lg-note">Siswa memakai NIS sebagai username.</p>
+          <form class="lg-form" data-form="login">
+            <div class="lg-field">
+              <label for="lgUser">Username</label>
+              <div class="lg-input">${LG_ICON.user}<input id="lgUser" name="username" required placeholder="Username atau NIS" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+            </div>
+            <div class="lg-field">
+              <label for="lgPass">Password</label>
+              <div class="lg-input">${LG_ICON.lock}<input id="lgPass" name="password" type="password" required placeholder="Masukkan password" autocomplete="current-password">${lgEye}</div>
+            </div>
+            <p class="form-msg lg-msg" role="alert">${esc(msg)}</p>
+            <button class="lg-btn" type="submit"><span>Masuk</span>${LG_ICON.arrow}</button>
+            <button type="button" class="lg-link" data-action="forgotPw">Lupa password?</button>
+          </form>
+        </div>`
+    });
   }
 
   function renderForceChange() {
     document.title = 'Buat Password Baru';
-    app.innerHTML = `
-      <div class="login-wrap"><section class="login-hero"><div class="brand"><span class="brand-mark">S</span><span>SIAKAD OBE Sekolah</span></div>
-      <h1>Buat password baru</h1><p>Demi keamanan, Anda wajib mengganti password awal sebelum melanjutkan.</p></section>
-      <section class="login-panel"><div class="login-box"><h2>Ganti Password</h2>
-      <form class="form" data-form="changePw" style="margin-top:1rem">
-        <div class="field"><label>Password lama</label><input name="old_password" type="password" required></div>
-        <div class="field"><label>Password baru (min. 8 karakter)</label><input name="new_password" type="password" minlength="8" required></div>
-        <p class="form-msg"></p>
-        <button class="btn full" type="submit">Simpan</button>
-      </form></div></section></div>`;
+    app.innerHTML = loginShell({
+      title: 'Buat <em>password baru</em> untuk akun Anda.',
+      sub: 'Demi keamanan, Anda wajib mengganti password awal sebelum melanjutkan.',
+      card: `
+        <div class="lg-card">
+          <span class="lg-badge">${LG_ICON.shield}Keamanan Akun</span>
+          <h2>Ganti Password</h2>
+          <p class="lg-note">Gunakan kombinasi yang sulit ditebak, minimal 8 karakter.</p>
+          <form class="lg-form" data-form="changePw">
+            <div class="lg-field">
+              <label for="lgOld">Password lama</label>
+              <div class="lg-input">${LG_ICON.lock}<input id="lgOld" name="old_password" type="password" required placeholder="Password saat ini" autocomplete="current-password">${lgEye}</div>
+            </div>
+            <div class="lg-field">
+              <label for="lgNew">Password baru <span class="lg-hint">(min. 8 karakter)</span></label>
+              <div class="lg-input">${LG_ICON.lock}<input id="lgNew" name="new_password" type="password" minlength="8" required placeholder="Password baru" autocomplete="new-password">${lgEye}</div>
+            </div>
+            <p class="form-msg lg-msg" role="alert"></p>
+            <button class="lg-btn" type="submit"><span>Simpan</span>${LG_ICON.arrow}</button>
+          </form>
+        </div>`
+    });
   }
 
   function layout(content, active) {
@@ -2296,6 +2370,9 @@ async function keuanganView() {
       const msg = f.querySelector('.form-msg');
       if (msg) msg.textContent = '';
 
+      const btn = f.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.classList.add('is-loading'); }
+
       try {
         const r = await api('/login', 'POST', data);
         me = r.user;
@@ -2304,6 +2381,15 @@ async function keuanganView() {
       } catch (e) {
         if (msg) msg.textContent = e.message;
         else toast(e.message, false);
+
+        const card = f.closest('.lg-card');
+        if (card) {
+          card.classList.remove('shake');
+          void card.offsetWidth; // mulai ulang animasi
+          card.classList.add('shake');
+        }
+      } finally {
+        if (btn && document.body.contains(btn)) { btn.disabled = false; btn.classList.remove('is-loading'); }
       }
     },
 
@@ -2661,6 +2747,16 @@ async function keuanganView() {
     toggleSide() {
       const side = document.getElementById('side');
       if (side) side.classList.toggle('open');
+    },
+
+    // Tombol mata di form login: tampilkan atau sembunyikan password
+    togglePw(el) {
+      const input = el.closest('.lg-input') && el.closest('.lg-input').querySelector('input');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      el.setAttribute('aria-pressed', show ? 'true' : 'false');
+      el.setAttribute('aria-label', show ? 'Sembunyikan password' : 'Tampilkan password');
     },
 
     bell() {
