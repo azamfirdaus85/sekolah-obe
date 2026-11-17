@@ -197,10 +197,15 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
             <span class="brand-mark">S</span>
             <div><span>SIAKAD OBE</span><small style="display:block;font-weight:400;color:#94a3b8;font-size:.75rem">Sekolah • OBE System</small></div>
           </div>
+          <div class="side-user"><b>${esc(me.name)}</b><em>${roleLabel(me.role)}</em></div>
           <nav>${menu}</nav>
           <div style="margin-top:auto;background:rgba(255,255,255,.06);border-radius:14px;padding:1rem">
             <p style="font-size:.8rem;color:#fff;font-weight:700">Butuh Bantuan?</p>
             <p style="font-size:.75rem;color:#94a3b8">Hubungi Admin Sekolah untuk reset password.</p>
+          </div>
+          <div class="side-actions">
+            <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
+            <button class="btn sm" data-action="logout">Keluar →</button>
           </div>
         </aside>
         <div class="main">
@@ -212,8 +217,8 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
             </div>
             <span class="who">${esc(me.name)}<em>${roleLabel(me.role)}</em></span>
             <button class="btn sm ghost" data-action="bell" title="Notifikasi" style="position:relative">🔔<span id="bellCount" style="display:none;position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-size:.68rem;font-weight:700;line-height:18px;text-align:center"></span></button>
-            <button class="btn sm ghost" data-action="pw">🔑 Ganti Password</button>
-            <button class="btn sm" data-action="logout">Keluar →</button>
+            <button class="btn sm ghost top-act" data-action="pw">🔑 Ganti Password</button>
+            <button class="btn sm top-act" data-action="logout">Keluar →</button>
           </header>
           <main class="content">${content}</main>
         </div>
@@ -254,9 +259,9 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       const [s, per] = await Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]);
       const c = (icon, l, v, color) => `
         <div class="card stat" style="border-left:4px solid ${color}">
-          <div style="display:flex;justify-content:space-between;align-items:start">
-            <div><b style="font-size:2.4rem">${v}</b><span class="muted" style="text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;font-weight:700">${l}</span></div>
-            <span style="font-size:2rem;background:${color}1a;width:52px;height:52px;display:grid;place-items:center;border-radius:14px">${icon}</span>
+          <div class="stat-row">
+            <div><b class="stat-num">${v}</b><span class="muted stat-label">${l}</span></div>
+            <span class="stat-ico" style="background:${color}1a">${icon}</span>
           </div>
         </div>`;
       stats = `<p class="muted" style="margin:1rem 0 0">📆 Periode aktif: <b>${per ? esc(per.semester) + ' ' + esc(per.name) : 'belum diatur'}</b> ${per ? '' : '<a href="#/periode">Atur sekarang</a>'}</p><div class="cards">
@@ -272,9 +277,9 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       : '<p class="muted">Belum ada pengumuman.</p>';
     const home = homeHtml(ring) + chartsHtml(grafik);
     return `
-      <div style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
+      <div class="hero-banner" style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
         <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
-        <span style="font-size:3.5rem;opacity:.9">🎓</span>
+        <span class="hero-emoji" style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
       ${home}
@@ -3706,12 +3711,13 @@ async cetakInvoiceSPP(el) {
     }
   });
 
-  // Tutup sidebar (tampilan mobile) setelah menu diklik
+  // Tutup sidebar (tampilan mobile): setelah menu diklik, atau saat mengetuk area gelap di luar menu
   document.addEventListener('click', (e) => {
-    if (e.target.closest('#side nav a')) {
-      const side = document.getElementById('side');
-      if (side) side.classList.remove('open');
-    }
+    const side = document.getElementById('side');
+    if (!side || !side.classList.contains('open')) return;
+    const insideMenu = e.target.closest('#side');
+    const onBurger = e.target.closest('.burger');
+    if (e.target.closest('#side nav a') || (!insideMenu && !onBurger)) side.classList.remove('open');
   });
 
   // ================= INISIALISASI =================

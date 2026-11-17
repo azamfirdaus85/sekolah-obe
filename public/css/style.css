@@ -629,17 +629,145 @@ input.abs-note{width:100%;min-width:150px}
 }
 .card button:not([class]):hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(201,168,106,.35)}
 .card button:not([class]):disabled{opacity:.5;cursor:not-allowed;transform:none}
-/* Sidebar bisa di-scroll agar semua menu terjangkau */
-.side {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+
+
+/* =====================================================================
+   TAMPILAN HP (iPhone / Android)
+   Header satu baris, menu samping rapi dengan latar gelap di belakangnya,
+   kartu statistik 2 kolom, input tidak memicu zoom otomatis iOS.
+   Semua aturan di sini hanya aktif di layar kecil, tampilan laptop tidak berubah.
+   ===================================================================== */
+.side-actions,
+.side-user { display: none; }
+
+.stat-row { display: flex; justify-content: space-between; align-items: flex-start; gap: .6rem; }
+.card.stat .stat-num { font-size: 2.4rem; }
+.stat-label { text-transform: uppercase; letter-spacing: .08em; font-size: .7rem; font-weight: 700; }
+.stat-ico { font-size: 2rem; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; flex: 0 0 auto; }
+
+/* Tinggi layar iPhone yang benar (bar alamat Safari naik-turun) */
+@supports (height: 100dvh) {
+  .shell,
+  .login-wrap { min-height: calc(100dvh / var(--ui-zoom)); }
 }
 
+html { -webkit-text-size-adjust: 100%; }
+button, a, .btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
 @media (max-width: 900px) {
-  .side {
-    max-height: 100vh;
-    max-height: 100dvh;
-    padding-bottom: 7rem; /* ruang agar menu terakhir tidak tertutup bar browser */
+  /* ---------- Header: satu baris ---------- */
+  html body .shell .top {
+    height: auto !important;
+    min-height: 58px;
+    flex-wrap: nowrap !important;
+    gap: .5rem !important;
+    padding: .55rem .8rem !important;
   }
+  .top .who,
+  .top .top-act { display: none !important; }
+  .top > * { flex-shrink: 0; }
+  .top #gsWrap { flex: 1 1 auto !important; min-width: 0 !important; max-width: none !important; }
+  .top > .btn { padding: .5rem .7rem; min-width: 42px; justify-content: center; }
+  .burger { width: 42px; height: 42px; font-size: 1.15rem; flex: 0 0 auto; }
+  html[data-theme="dark"] .burger {
+    background: #131c2e;
+    color: #e2e8f0;
+    border-color: #263449;
+  }
+
+  /* ---------- Menu samping ---------- */
+  .side {
+    width: min(300px, calc(86vw / var(--ui-zoom)));
+    height: calc(100vh / var(--ui-zoom));
+    height: calc(100dvh / var(--ui-zoom));
+    padding: 1.1rem 1rem calc(1.1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    box-shadow: none; /* bayangan hanya saat menu terbuka, supaya tidak bocor di tepi layar */
+    overscroll-behavior: contain;
+  }
+  .side.open { box-shadow: 14px 0 40px rgba(0, 0, 0, .35); }
+  .side .brand { margin-bottom: 1rem; }
+  .side-user {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    padding: .7rem .9rem;
+    margin-bottom: .9rem;
+    border-radius: 14px;
+    background: rgba(212, 175, 55, .12);
+    border: 1px solid var(--line);
+    line-height: 1.25;
+  }
+  .side-user b { font-size: .92rem; }
+  .side-user em { font-style: normal; font-size: .75rem; font-weight: 600; color: var(--muted); }
+  .side nav { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .side nav a { padding: .8rem .9rem; font-size: .95rem; }
+  /* kotak "Butuh Bantuan?" disembunyikan di HP supaya daftar menu lebih lega */
+  .side > div[style*="margin-top:auto"] { display: none; }
+  .side-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+    margin-top: auto;
+    padding-top: .8rem;
+    border-top: 1px solid var(--line);
+  }
+  .side-actions .btn { width: 100%; justify-content: center; white-space: nowrap; }
+
+  /* Latar redup di belakang menu (ketuk di luar menu untuk menutup) */
+  body:has(.side.open) { overflow: hidden; }
+  body:has(.side.open)::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgba(2, 6, 23, .55);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+
+  /* ---------- Isi halaman ---------- */
+  .content { padding: 1rem .9rem 4rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1rem; }
+  .card { padding: 1.1rem; border-radius: 16px; }
+  .page-head { margin: 1rem 0 .8rem; }
+
+  .hero-banner { padding: 1.2rem !important; border-radius: 18px !important; gap: .8rem; }
+  .hero-banner h1 { font-size: 1.3rem !important; line-height: 1.25; }
+  .hero-banner p { font-size: .86rem; line-height: 1.45; }
+  .hero-emoji { font-size: 2.4rem !important; }
+
+  /* Tab bisa digeser ke samping, tidak menumpuk berbaris-baris */
+  .tabs {
+    width: auto;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs a { flex: 0 0 auto; white-space: nowrap; }
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+
+  /* iOS memperbesar layar kalau tulisan input < 16px. Dikalikan skala zoom agar tetap 16px nyata */
+  input, select, textarea, #gsInput { font-size: calc(16px / var(--ui-zoom)) !important; }
+}
+
+@media (max-width: 560px) {
+  .cards,
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .7rem;
+    margin: .9rem 0;
+  }
+  .card.stat { padding: .85rem .9rem; margin-bottom: 0; }
+  .card.stat b { font-size: 1.7rem; }
+  .card.stat .stat-num { font-size: 1.7rem; }
+  .stat-label { font-size: .62rem; letter-spacing: .05em; }
+  .stat-ico { font-size: 1.25rem; width: 36px; height: 36px; border-radius: 11px; }
+  .stat-card { padding: .85rem .9rem; }
+  .stat-card h2 { font-size: 1.2rem; }
+  .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
