@@ -327,10 +327,14 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
   }
 
   async function dash() {
+    // Semua permintaan dijalankan bersamaan supaya dashboard cepat muncul
+    const adminP = me.role === 'admin' ? Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]) : null;
+    if (adminP) adminP.catch(() => {});
+    const sesiP = me.role === 'siswa' ? api('/absensi/siswa/sesi-aktif').catch(() => null) : null;
     const [news, ring, grafik] = await Promise.all([api('/announcements'), api('/dashboard/ringkasan').catch(() => null), api('/dashboard/grafik').catch(() => null)]);
     let stats = '';
     if (me.role === 'admin') {
-      const [s, per] = await Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]);
+      const [s, per] = await adminP;
       const c = (icon, l, v, color) => `
         <div class="card stat" style="border-left:4px solid ${color}">
           <div class="stat-row">
@@ -354,11 +358,8 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     // Kartu absen masuk di dashboard siswa: memakai sesi yang dibuka guru (absensi mandiri)
     let absenCard = '';
     if (me.role === 'siswa') {
-      let sesiList = [];
-      try {
-        const sd = await api('/absensi/siswa/sesi-aktif');
-        sesiList = Array.isArray(sd) ? sd : (sd.sessions || sd.rows || []);
-      } catch (e) { sesiList = []; }
+      const sd = await sesiP;
+      const sesiList = !sd ? [] : (Array.isArray(sd) ? sd : (sd.sessions || sd.rows || []));
       absenCard = `<div class="card"><h2>📍 Absen Masuk</h2>
         ${sesiList.length
           ? sesiList.map((x) => `<div class="news"><h3>${esc(x.subject_name || x.teaching_name || 'Mata Pelajaran')} - ${esc(x.class_name || 'Kelas')}</h3>
@@ -1395,8 +1396,11 @@ const QUICK_EXTRA = {
     b.style.display = n > 0 ? 'block' : 'none';
   }
 
-  async function refreshBell() {
+  let lastBellAt = 0;
+  async function refreshBell(force) {
     if (!me || me.must_change) return;
+    if (force !== true && Date.now() - lastBellAt < 30000) { paintBell(); return; }
+    lastBellAt = Date.now();
     try {
       notifCache = await api('/notif');
       paintBell();
@@ -1404,7 +1408,7 @@ const QUICK_EXTRA = {
   }
 
   async function openBell() {
-    await refreshBell();
+    await refreshBell(true);
     const list = notifCache.items.length
       ? notifCache.items.map((n) => `<a href="${esc(n.link)}" data-action="closeModal" style="display:block;padding:.6rem .5rem;border-bottom:1px solid rgba(100,116,139,.25);text-decoration:none;color:inherit;${n.unread ? 'background:rgba(99,102,241,.08);' : ''}">
           <div style="display:flex;gap:.6rem;align-items:flex-start"><span style="font-size:1.2rem">${n.icon}</span>
@@ -2341,6 +2345,23 @@ async function keuanganView() {
 
   // ================= ROUTING =================
 
+  let routeSeq = 0;
+  let lastHash = null;
+
+  // Isi halaman saja yang diganti bila menu dan header sudah ada (lebih cepat, menu tidak berkedip)
+  function paintPage(html, active) {
+    const content = document.querySelector('main.content');
+    if (content && document.getElementById('side')) {
+      content.innerHTML = html;
+      markActive(active);
+    } else {
+      app.innerHTML = layout(html, active);
+    }
+  }
+  function markActive(active) {
+    document.querySelectorAll('#side nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#/' + active));
+  }
+
   async function route() {
     closeModal();
 
@@ -2362,22 +2383,33 @@ async function keuanganView() {
       view === 'detail' ? 'monitor' :
       view;
 
+    // Tampilkan menu dan header langsung, isi halaman menyusul setelah data datang
+    const seq = ++routeSeq;
+    const hasShell = !!(document.getElementById('side') && document.querySelector('main.content'));
+    const navigating = location.hash !== lastHash;
+    if (!hasShell) {
+      app.innerHTML = layout('<div class="loading">⏳ Memuat...</div>', active);
+    } else if (navigating) {
+      markActive(active);
+      document.querySelector('main.content').innerHTML = '<div class="loading">⏳ Memuat...</div>';
+      window.scrollTo(0, 0);
+    }
+    lastHash = location.hash;
+
     try {
       const html = await fn(id, tab, extra);
+      if (seq !== routeSeq) return; // pengguna sudah pindah halaman lagi
 
-      app.innerHTML = layout(html, active);
+      paintPage(html, active);
 
       logVisit(view, location.hash);
       paintBell();
       refreshBell();
 
     } catch (e) {
-      if (!me) return;
+      if (!me || seq !== routeSeq) return;
 
-      app.innerHTML = layout(
-        `<div class="card"><p class="err">${esc(e.message)}</p></div>`,
-        active
-      );
+      paintPage(`<div class="card"><p class="err">${esc(e.message)}</p></div>`, active);
     }
   }
 
@@ -3837,6 +3869,14 @@ async cetakInvoiceSPP(el) {
   // ================= INISIALISASI =================
 
   window.addEventListener('hashchange', route);
+
+  // Font dimuat di latar belakang supaya halaman tidak menunggu Google Fonts
+  (function loadFonts() {
+    const add = (attrs) => { const l = document.createElement('link'); Object.assign(l, attrs); document.head.appendChild(l); };
+    add({ rel: 'preconnect', href: 'https://fonts.googleapis.com' });
+    add({ rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' });
+    add({ rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap' });
+  })();
 
   (async function init() {
     try {

@@ -4,7 +4,7 @@
    DASHBOARD : GOLD LUXURY (Gold Gradient #BF953F - #FCF6BA)
    =================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+/* Font dimuat dari app.js (tidak lagi lewat @import yang menahan tampilan halaman) */
 
 :root{
   --gold-1:#BF953F;
