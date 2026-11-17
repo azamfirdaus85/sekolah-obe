@@ -233,3 +233,64 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #334155; border-
   }
   .theme-fab { display: none !important; }
 }
+
+/* =====================================================
+   SIDEBAR MODE GELAP (perbaikan)
+   style.css memakai "html body .shell .side ..." + !important,
+   jadi selector di sini dibuat lebih spesifik agar menang.
+   ===================================================== */
+html[data-theme="dark"] body .shell .side {
+  background:
+    radial-gradient(420px 260px at 0% 0%, rgba(129, 140, 248, .16), transparent 70%),
+    linear-gradient(180deg, #131c2e 0%, #0b1120 100%) !important;
+  border-right: 1px solid var(--d-border) !important;
+  color: var(--d-text) !important;
+  box-shadow: 4px 0 30px rgba(0, 0, 0, .35);
+}
+html[data-theme="dark"] body .shell .side.open { box-shadow: 14px 0 44px rgba(0, 0, 0, .6) !important; }
+
+/* Brand */
+html[data-theme="dark"] body .shell .side .brand > div > span { color: var(--d-text-strong) !important; }
+html[data-theme="dark"] body .shell .side .brand small { color: var(--d-muted) !important; }
+html[data-theme="dark"] body .shell .side .brand-mark {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .45), 0 0 0 4px rgba(212, 175, 55, .18);
+}
+
+/* Kartu pengguna */
+html[data-theme="dark"] body .shell .side .side-user {
+  background: linear-gradient(135deg, #1a2640 0%, #162036 60%, #131c2e 100%) !important;
+  border: 1px solid rgba(212, 175, 55, .35) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+html[data-theme="dark"] body .shell .side .side-user b { color: var(--d-text-strong) !important; }
+html[data-theme="dark"] body .shell .side .side-user em { color: #e6c36a !important; }
+
+/* Daftar menu */
+html[data-theme="dark"] body .shell .side nav a {
+  color: #cbd5e1 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+html[data-theme="dark"] body .shell .side nav a:hover,
+html[data-theme="dark"] body .shell .side nav a:active {
+  background: rgba(212, 175, 55, .12) !important;
+  color: #f8fafc !important;
+}
+html[data-theme="dark"] body .shell .side nav a .nav-ic { background: rgba(255, 255, 255, .07); }
+html[data-theme="dark"] body .shell .side nav a.on,
+html[data-theme="dark"] body .shell .side nav a.on:hover {
+  background: linear-gradient(135deg, #BF953F 0%, #E9D58A 52%, #B38728 100%) !important;
+  color: #1c1608 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .5) !important;
+}
+html[data-theme="dark"] body .shell .side nav a.on .nav-ic { background: rgba(255, 255, 255, .55); }
+html[data-theme="dark"] body .shell .side nav a.on::after { background: #1c1608; }
+html[data-theme="dark"] body .shell .side nav::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, .4); }
+
+/* Tombol bawah (tampilan HP) */
+html[data-theme="dark"] body .shell .side .side-actions { border-top: 1px solid var(--d-border) !important; }
+html[data-theme="dark"] body .shell .side .side-actions .btn.ghost {
+  background: var(--d-surface-2) !important;
+  color: var(--d-text) !important;
+  border: 1.5px solid #334155 !important;
+}

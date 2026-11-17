@@ -7,6 +7,7 @@ const STATUS_SISWA = ['hadir', 'izin', 'sakit', 'alpa'];
 const STATUS_STAF = ['hadir', 'izin', 'sakit', 'dinas'];
 const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const RE_MONTH = /^\d{4}-\d{2}$/;
+const RE_TIME = /^\d{2}:\d{2}$/;
 
 const todayStr = () =>
   new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
@@ -65,6 +66,60 @@ const fail = (res, e, msg) => {
   console.error(e);
   res.status(500).json({ error: msg });
 };
+
+/* Absensi mandiri dicatat PER SESI di tabel ini, supaya guru boleh membuka sesi
+   lebih dari sekali dalam sehari dan siswa bisa absen di tiap sesi.
+   student_attendance tetap satu baris per siswa per mapel per hari (dipakai rekap). */
+let checkinsReady = null;
+function ensureCheckins() {
+  if (!checkinsReady) {
+    checkinsReady = (async () => {
+      const had = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attendance_session_checkins'"
+      ).get();
+
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS attendance_session_checkins (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL,
+          student_id INTEGER NOT NULL,
+          created_at TEXT,
+          UNIQUE(session_id, student_id)
+        )
+      `).run();
+
+      // Sesi boleh dikaitkan dengan jam pelajaran (mis. 07:00-08:30)
+      for (const col of ['slot_start', 'slot_end']) {
+        try {
+          await db.prepare(`ALTER TABLE attendance_sessions ADD COLUMN ${col} TEXT`).run();
+        } catch (e) {
+          if (!/duplicate column|already exists/i.test(String(e.message || e))) throw e;
+        }
+      }
+
+      // Sekali saja saat tabel baru dibuat: siswa yang sudah hadir pada hari yang hanya
+      // punya satu sesi dianggap sudah absen di sesi itu.
+      if (!had) {
+        await db.prepare(`
+          INSERT OR IGNORE INTO attendance_session_checkins (session_id, student_id, created_at)
+          SELECT s.id, a.student_id, s.date || ' 00:00'
+          FROM attendance_sessions s
+          JOIN student_attendance a
+            ON a.teaching_id = s.teaching_id AND a.date = s.date
+          WHERE a.status = 'hadir'
+            AND (
+              SELECT COUNT(*) FROM attendance_sessions s2
+              WHERE s2.teaching_id = s.teaching_id AND s2.date = s.date
+            ) = 1
+        `).run();
+      }
+    })().catch((e) => {
+      checkinsReady = null;
+      throw e;
+    });
+  }
+  return checkinsReady;
+}
 
 async function ownTeaching(teachingId, userId) {
   return db.prepare(`
@@ -153,44 +208,63 @@ router.post('/guru/sesi/buka', role('guru'), async (req, res) => {
       });
     }
 
+    await ensureCheckins();
+
+    // Jam pelajaran (opsional). Tiap jam punya sesi sendiri, jadi guru bisa
+    // membuka sesi jam ke-1 dan jam ke-3 secara terpisah di hari yang sama.
+    const slotStart = clip(req.body.jam_mulai, 5);
+    const slotEnd = clip(req.body.jam_selesai, 5);
+
+    if ((slotStart && !RE_TIME.test(slotStart)) || (slotEnd && !RE_TIME.test(slotEnd))) {
+      return res.status(400).json({
+        error: 'Format jam tidak valid (HH:MM)'
+      });
+    }
+
     const date = todayStr();
     const closesAt = getJakartaDateTimeAfter(duration);
 
-    // Periksa sesi yang masih aktif
+    // Periksa sesi yang masih aktif untuk jam yang sama
     const active = await db.prepare(`
       SELECT id
       FROM attendance_sessions
       WHERE teaching_id = ?
         AND date = ?
+        AND COALESCE(slot_start, '') = ?
         AND status = 'open'
         AND closes_at > ?
-    `).get(teaching.id, date, nowDateTime());
+    `).get(teaching.id, date, slotStart, nowDateTime());
 
     if (active) {
       return res.status(400).json({
-        error: 'Sesi absensi untuk kelas ini masih terbuka',
+        error: slotStart
+          ? `Sesi absensi jam ${slotStart} untuk kelas ini masih terbuka`
+          : 'Sesi absensi untuk kelas ini masih terbuka',
         session_id: active.id
       });
     }
 
-    // Tutup sesi lama yang sudah kedaluwarsa
+    // Tutup sesi lama (jam yang sama) yang sudah kedaluwarsa
     await db.prepare(`
       UPDATE attendance_sessions
       SET status = 'closed'
       WHERE teaching_id = ?
         AND date = ?
+        AND COALESCE(slot_start, '') = ?
         AND status = 'open'
-    `).run(teaching.id, date);
+    `).run(teaching.id, date, slotStart);
 
     const result = await db.prepare(`
       INSERT INTO attendance_sessions
-      (teaching_id, date, opened_by, closes_at, status)
-      VALUES (?, ?, ?, ?, 'open')
+      (teaching_id, date, opened_by, closes_at, status, slot_start, slot_end)
+      VALUES (?, ?, ?, ?, 'open', ?, ?)
     `).run(
       teaching.id,
       date,
       req.user.id,
-      closesAt
+      closesAt,
+      slotStart || null,
+      slotEnd || null
     );
 
     res.json({
@@ -199,7 +273,9 @@ router.post('/guru/sesi/buka', role('guru'), async (req, res) => {
       session_id: Number(result.lastInsertRowid),
       teaching,
       date,
-      closes_at: closesAt
+      closes_at: closesAt,
+      jam_mulai: slotStart || null,
+      jam_selesai: slotEnd || null
     });
 
   } catch (e) {
@@ -225,6 +301,8 @@ router.get('/guru/sesi', role('guru'), async (req, res) => {
       });
     }
 
+    await ensureCheckins();
+
     const rows = await db.prepare(`
       SELECT
         id,
@@ -232,7 +310,9 @@ router.get('/guru/sesi', role('guru'), async (req, res) => {
         date,
         opened_at,
         closes_at,
-        status
+        status,
+        slot_start,
+        slot_end
       FROM attendance_sessions
       WHERE teaching_id = ?
       ORDER BY id DESC
@@ -240,11 +320,12 @@ router.get('/guru/sesi', role('guru'), async (req, res) => {
     `).all(teaching.id);
 
     const now = nowDateTime();
-    const session = rows.find(
+    const active = rows.filter(
       (r) => r.status === 'open' && r.date === todayStr() && r.closes_at > now
-    ) || null;
+    );
+    const session = active[0] || null;
 
-    res.json({ teaching, session, rows });
+    res.json({ teaching, session, active, rows });
 
   } catch (e) {
     fail(res, e, 'Gagal memuat sesi absensi');
@@ -539,23 +620,31 @@ router.get('/siswa/sesi-aktif', role('siswa'), async (req, res) => {
       });
     }
 
+    await ensureCheckins();
+
     const rows = await db.prepare(`
       SELECT
+        a.id,
         a.id AS session_id,
         a.date,
+        a.opened_at,
         a.closes_at,
+        a.slot_start,
+        a.slot_end,
         t.id AS teaching_id,
         s.name AS subject_name,
         c.name AS class_name,
-        sa.status AS attendance_status
+        u.name AS teacher_name,
+        CASE WHEN ck.id IS NULL THEN 0 ELSE 1 END AS sudah_absen,
+        ck.created_at AS absen_at
       FROM attendance_sessions a
       JOIN teaching t ON t.id = a.teaching_id
       JOIN subjects s ON s.id = t.subject_id
       JOIN classes c ON c.id = t.class_id
-      LEFT JOIN student_attendance sa
-        ON sa.student_id = ?
-        AND sa.teaching_id = t.id
-        AND sa.date = a.date
+      LEFT JOIN users u ON u.id = t.teacher_id
+      LEFT JOIN attendance_session_checkins ck
+        ON ck.session_id = a.id
+        AND ck.student_id = ?
       WHERE t.class_id = ?
         AND a.date = ?
         AND a.status = 'open'
@@ -655,8 +744,24 @@ router.post('/siswa/absen', role('siswa'), async (req, res) => {
       });
     }
 
-    const existing = await db.prepare(`
+    await ensureCheckins();
+
+    // Sudah absen di SESI ini? (sesi lain di hari yang sama tidak menghalangi)
+    const done = await db.prepare(`
       SELECT id
+      FROM attendance_session_checkins
+      WHERE session_id = ?
+        AND student_id = ?
+    `).get(session.id, me.id);
+
+    if (done) {
+      return res.status(400).json({
+        error: 'Anda sudah absen di sesi ini'
+      });
+    }
+
+    const existing = await db.prepare(`
+      SELECT id, status
       FROM student_attendance
       WHERE student_id = ?
         AND teaching_id = ?
@@ -667,22 +772,33 @@ router.post('/siswa/absen', role('siswa'), async (req, res) => {
       session.date
     );
 
-    if (existing) {
-      return res.status(400).json({
-        error: 'Anda sudah melakukan absensi untuk pelajaran ini'
+    const stmts = [{
+      sql: `
+        INSERT INTO attendance_session_checkins
+        (session_id, student_id, created_at)
+        VALUES (?, ?, ?)
+      `,
+      args: [session.id, me.id, nowDateTime()]
+    }];
+
+    if (!existing) {
+      stmts.push({
+        sql: `
+          INSERT INTO student_attendance
+          (student_id, teaching_id, date, status, note, recorded_by)
+          VALUES (?, ?, ?, 'hadir', NULL, ?)
+        `,
+        args: [me.id, session.teaching_id, session.date, session.opened_by || null]
+      });
+    } else if (existing.status === 'alpa') {
+      // Tadinya tercatat alpa, tapi siswa nyatanya hadir di sesi berikutnya
+      stmts.push({
+        sql: `UPDATE student_attendance SET status = 'hadir' WHERE id = ?`,
+        args: [existing.id]
       });
     }
 
-    await db.prepare(`
-      INSERT INTO student_attendance
-      (student_id, teaching_id, date, status, note, recorded_by)
-      VALUES (?, ?, ?, 'hadir', NULL, ?)
-    `).run(
-      me.id,
-      session.teaching_id,
-      session.date,
-      session.opened_by || null
-    );
+    await runBatch(stmts);
 
     res.json({
       ok: true,

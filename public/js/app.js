@@ -326,11 +326,70 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       : '<p class="muted">Belum ada refleksi.</p>';
   }
 
+  // ---------- Status "Sudah Absen" untuk absensi mandiri siswa ----------
+  // Ambil baris absensi milik siswa yang tanggalnya hari ini (WIB)
+  function rowsHariIni(saya) {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
+    const rows = saya && Array.isArray(saya.rows) ? saya.rows : [];
+    return rows.filter((r) => String(r.date || '').slice(0, 10) === today);
+  }
+  // Apakah sesi x sudah diabsen siswa hari ini?
+  // Guru boleh membuka sesi lebih dari sekali dalam sehari untuk mapel yang sama,
+  // jadi status dicek per SESI. Server menghitungnya (sudah_absen) di /absensi/siswa/sesi-aktif.
+  function sudahAbsenSesi(x) {
+    return Number(x.sudah_absen) === 1 || x.sudah_absen === true;
+  }
+  // Tombol: "Absen Sekarang" atau "Sudah Absen" (nonaktif)
+  function absenBtn(x, todayRows) {
+    return sudahAbsenSesi(x)
+      ? '<button class="btn" disabled style="opacity:.75;cursor:default">✅ Sudah Absen</button>'
+      : `<button class="btn" data-action="absenMandiri" data-id="${esc(x.id || x.session_id)}">Absen Sekarang</button>`;
+  }
+
+  // Dashboard guru: buka sesi absensi untuk kelas & mapel yang dijadwalkan hari ini.
+  // Boleh dibuka berkali-kali dalam sehari (sesi baru bisa dibuka setelah sesi sebelumnya ditutup/habis).
+  async function guruAbsenHariIni(ring) {
+    const jadwal = ring && Array.isArray(ring.jadwal) ? ring.jadwal : [];
+    const judul = '<h2>📝 Buka Absen Hari Ini</h2>';
+    if (!jadwal.length) return `<div class="card">${judul}<p class="muted">Tidak ada jadwal mengajar hari ini.</p></div>`;
+    const kelas = await api('/absensi/guru/kelas').catch(() => []);
+    const tidOf = (j) => {
+      if (j.teaching_id != null) return j.teaching_id;
+      const k = kelas.find((k) => k.subject_name === j.subject_name && k.class_name === j.class_name);
+      return k ? k.id : null;
+    };
+    const items = jadwal.map((j) => ({ j, tid: tidOf(j) }));
+    const sesiMap = {};
+    await Promise.all([...new Set(items.map((i) => i.tid).filter((t) => t != null))].map(async (t) => {
+      const r = await api(`/absensi/guru/sesi?teaching_id=${t}`).catch(() => ({ session: null }));
+      sesiMap[t] = r.active || (r.session ? [r.session] : []);
+    }));
+    const rows = items.map(({ j, tid }) => {
+      // Tiap jam pelajaran punya sesi sendiri; sesi tanpa jam (dibuka dari halaman Absensi) berlaku untuk semua jam
+      const aktif = tid != null ? (sesiMap[tid] || []) : [];
+      const sesi = aktif.find((x) => x.slot_start === j.start_time) || aktif.find((x) => !x.slot_start) || null;
+      const buka = sesi && sesi.status === 'open';
+      const aksi = tid == null
+        ? '<span class="muted small">Kelas ajar tidak ditemukan</span>'
+        : buka
+          ? `<span class="pill ok">Sesi dibuka</span> <span class="muted small">s/d ${esc(sesi.closes_at || '-')}</span>
+             <button class="btn sm danger" data-action="tutupSesi" data-id="${esc(sesi.id)}">Tutup</button>`
+          : `<input class="durasi-sesi" type="number" min="1" max="240" value="30" style="width:5rem" title="Durasi (menit)">
+             <button class="btn sm" data-action="bukaSesiCepat" data-tid="${esc(tid)}" data-start="${esc(j.start_time)}" data-end="${esc(j.end_time)}">Buka Sesi</button>`;
+      return `<div class="sched-item"><div class="sched-time">${esc(j.start_time)}<small>${esc(j.end_time)}</small></div>
+        <div class="sched-body"><b>${esc(j.subject_name)}</b><span class="muted small">${esc(j.class_name)}${j.room ? ' &bull; ' + esc(j.room) : ''}</span></div>
+        <div class="actions">${aksi}</div></div>`;
+    }).join('');
+    return `<div class="card">${judul}<p class="muted small" style="margin-top:-.5rem;margin-bottom:.8rem">Tiap jam pelajaran punya sesi sendiri, jadi satu kelas bisa diabsen dua kali atau lebih dalam sehari.</p>${rows}</div>`;
+  }
+
   async function dash() {
     // Semua permintaan dijalankan bersamaan supaya dashboard cepat muncul
     const adminP = me.role === 'admin' ? Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]) : null;
     if (adminP) adminP.catch(() => {});
-    const sesiP = me.role === 'siswa' ? api('/absensi/siswa/sesi-aktif').catch(() => null) : null;
+    const sesiP = me.role === 'siswa'
+      ? Promise.all([api('/absensi/siswa/sesi-aktif').catch(() => null), api('/absensi/siswa/saya').catch(() => null)])
+      : null;
     const [news, ring, grafik] = await Promise.all([api('/announcements'), api('/dashboard/ringkasan').catch(() => null), api('/dashboard/grafik').catch(() => null)]);
     let stats = '';
     if (me.role === 'admin') {
@@ -354,17 +413,19 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       ? news.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p></div>`).join('')
       : '<p class="muted">Belum ada pengumuman.</p>';
     const home = homeHtml(ring) + chartsHtml(grafik);
+    const guruAbsen = me.role === 'guru' ? await guruAbsenHariIni(ring).catch(() => '') : '';
 
     // Kartu absen masuk di dashboard siswa: memakai sesi yang dibuka guru (absensi mandiri)
     let absenCard = '';
     if (me.role === 'siswa') {
-      const sd = await sesiP;
+      const [sd, saya] = await sesiP;
+      const todayRows = rowsHariIni(saya);
       const sesiList = !sd ? [] : (Array.isArray(sd) ? sd : (sd.sessions || sd.rows || []));
       absenCard = `<div class="card"><h2>📍 Absen Masuk</h2>
         ${sesiList.length
           ? sesiList.map((x) => `<div class="news"><h3>${esc(x.subject_name || x.teaching_name || 'Mata Pelajaran')} - ${esc(x.class_name || 'Kelas')}</h3>
-              <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
-              <button class="btn" data-action="absenMandiri" data-id="${esc(x.id || x.session_id)}">Absen Sekarang</button></div>`).join('')
+              <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; ${x.slot_start ? 'Jam ' + esc(x.slot_start) + (x.slot_end ? '-' + esc(x.slot_end) : '') + ' &bull; ' : ''}Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
+              ${absenBtn(x, todayRows)}</div>`).join('')
           : '<p class="muted">Belum ada sesi absensi yang dibuka guru untuk kelas Anda.</p>'}
         <div class="actions" style="margin-top:.6rem"><button class="btn sm ghost" data-action="refreshAbsen">Perbarui</button><a class="btn sm ghost" href="#/absen">Riwayat Absensi</a></div></div>`;
     }
@@ -374,6 +435,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         <span class="hero-emoji" style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
+      ${guruAbsen}
       ${absenCard}
       ${home}
       <div class="card"><h2>📢 Pengumuman</h2>${list}</div>`;
@@ -1040,7 +1102,7 @@ const QUICK_EXTRA = {
         <div class="actions"><button class="btn danger" data-action="tutupSesi" data-id="${esc(sesi.id)}">Tutup Sesi</button></div>`
         : '<p class="muted">Belum ada sesi absensi mandiri yang aktif untuk kelas ini.</p>'}
       <form class="form inline" data-form="bukaSesi" data-tid="${esc(tid)}">
-        <div class="field"><label>Durasi sesi (menit)</label><input name="durasi_menit" type="number" min="1" max="1440" value="30" required></div>
+        <div class="field"><label>Durasi sesi (menit)</label><input name="durasi_menit" type="number" min="1" max="240" value="30" required></div>
         <button class="btn" type="submit" ${sesi && sesi.status === 'open' ? 'disabled' : ''}>Buka Sesi Absensi</button>
       </form><p class="muted small">Siswa di kelas ini dapat melakukan absensi mandiri selama sesi masih aktif.</p></div>`;
     const rows = d.rows
@@ -1064,10 +1126,11 @@ const QUICK_EXTRA = {
       api('/absensi/siswa/sesi-aktif').catch(() => ({ sessions: [] }))
     ]);
     const sesiAktif = Array.isArray(sesiData) ? sesiData : (sesiData.sessions || sesiData.rows || []);
+    const todayRows = rowsHariIni(d);
     const sesiHtml = `<div class="card"><h2>📍 Sesi Absensi Aktif</h2>
       ${sesiAktif.length ? sesiAktif.map((x) => `<div class="news"><h3>${esc(x.subject_name || x.teaching_name || 'Mata Pelajaran')} - ${esc(x.class_name || 'Kelas')}</h3>
-        <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
-        <button class="btn" data-action="absenMandiri" data-id="${esc(x.id || x.session_id)}">Absen Sekarang</button></div>`).join('')
+        <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; ${x.slot_start ? 'Jam ' + esc(x.slot_start) + (x.slot_end ? '-' + esc(x.slot_end) : '') + ' &bull; ' : ''}Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
+        ${absenBtn(x, todayRows)}</div>`).join('')
         : '<p class="muted">Belum ada sesi absensi yang dibuka untuk kelas Anda.</p>'}
       <button class="btn sm ghost" data-action="refreshAbsen">Perbarui</button></div>`;
     const s = d.summary;
@@ -3012,6 +3075,26 @@ async verifikasiBuktiSPP(el) {
       });
     },
 
+    async bukaSesiCepat(el) {
+      const row = el.closest('.sched-item');
+      const input = row && row.querySelector('.durasi-sesi');
+      const durasi = Number(input && input.value) || 30;
+      el.disabled = true;
+      try {
+        await api('/absensi/guru/sesi/buka', 'POST', {
+          teaching_id: Number(el.dataset.tid),
+          durasi_menit: durasi,
+          jam_mulai: el.dataset.start || undefined,
+          jam_selesai: el.dataset.end || undefined
+        });
+        toast('Sesi absensi berhasil dibuka');
+        route();
+      } catch (e) {
+        el.disabled = false;
+        throw e;
+      }
+    },
+
     async tutupSesi(el) {
       // TEBAKAN: POST /absensi/guru/sesi/tutup
       await api('/absensi/guru/sesi/tutup', 'POST', {
@@ -3022,11 +3105,17 @@ async verifikasiBuktiSPP(el) {
     },
 
     async absenMandiri(el) {
-      await api('/absensi/siswa/absen', 'POST', {
-        session_id: Number(el.dataset.id)
-      });
-      toast('Absensi berhasil dicatat');
-      route();
+      el.disabled = true;
+      try {
+        await api('/absensi/siswa/absen', 'POST', {
+          session_id: Number(el.dataset.id)
+        });
+        toast('Absensi berhasil dicatat');
+        route();
+      } catch (e) {
+        el.disabled = false;
+        throw e;
+      }
     },
 
     refreshAbsen() {
