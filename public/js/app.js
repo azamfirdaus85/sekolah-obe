@@ -350,12 +350,30 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       ? news.map((n) => `<div class="news"><h3>${esc(n.title)}</h3><time>${fdate(n.created_at)}</time><p>${esc(n.body)}</p></div>`).join('')
       : '<p class="muted">Belum ada pengumuman.</p>';
     const home = homeHtml(ring) + chartsHtml(grafik);
+
+    // Kartu absen masuk di dashboard siswa: memakai sesi yang dibuka guru (absensi mandiri)
+    let absenCard = '';
+    if (me.role === 'siswa') {
+      let sesiList = [];
+      try {
+        const sd = await api('/absensi/siswa/sesi-aktif');
+        sesiList = Array.isArray(sd) ? sd : (sd.sessions || sd.rows || []);
+      } catch (e) { sesiList = []; }
+      absenCard = `<div class="card"><h2>📍 Absen Masuk</h2>
+        ${sesiList.length
+          ? sesiList.map((x) => `<div class="news"><h3>${esc(x.subject_name || x.teaching_name || 'Mata Pelajaran')} - ${esc(x.class_name || 'Kelas')}</h3>
+              <p class="muted small">Guru: ${esc(x.teacher_name || '-')} &bull; Batas waktu: <b>${esc(x.closes_at || '-')}</b></p>
+              <button class="btn" data-action="absenMandiri" data-id="${esc(x.id || x.session_id)}">Absen Sekarang</button></div>`).join('')
+          : '<p class="muted">Belum ada sesi absensi yang dibuka guru untuk kelas Anda.</p>'}
+        <div class="actions" style="margin-top:.6rem"><button class="btn sm ghost" data-action="refreshAbsen">Perbarui</button><a class="btn sm ghost" href="#/absen">Riwayat Absensi</a></div></div>`;
+    }
     return `
       <div class="hero-banner" style="background:linear-gradient(135deg,#0b1220 0%,#6366f1 100%);color:#fff;padding:2rem;border-radius:20px;display:flex;justify-content:space-between;align-items:center">
         <div><h1 style="color:#fff;font-size:1.8rem">Halo, ${esc(me.name)} 👋</h1><p style="color:#cbd5e1">Selamat datang di SIAKAD OBE Sekolah.</p></div>
         <span class="hero-emoji" style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
+      ${absenCard}
       ${home}
       <div class="card"><h2>📢 Pengumuman</h2>${list}</div>`;
   }
