@@ -1305,3 +1305,33 @@ html body .shell .side .side-actions .btn.ghost{
   .card{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .main,.content{min-width:0;max-width:100%}
 }
+/* ===== Banner "Halo" dashboard: warna terang di mode terang, mode gelap tidak berubah ===== */
+html:not([data-theme="dark"]) .hero-banner {
+  background: linear-gradient(135deg, #fff6da 0%, #f6dc93 100%) !important;
+  box-shadow: 0 10px 28px rgba(184, 138, 28, .18), inset 0 0 0 1px rgba(212, 169, 63, .35);
+}
+html:not([data-theme="dark"]) .hero-banner h1 { color: #3a2a05 !important; }
+html:not([data-theme="dark"]) .hero-banner p { color: #7a5f1c !important; }
+html:not([data-theme="dark"]) .hero-banner .hero-emoji { opacity: 1 !important; }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .hero-banner {
+    background: linear-gradient(135deg, #0b1220 0%, #6366f1 100%) !important;
+    box-shadow: none;
+  }
+  html:not([data-theme]) .hero-banner h1 { color: #fff !important; }
+  html:not([data-theme]) .hero-banner p { color: #cbd5e1 !important; }
+}
+
+/* ===== Input durasi sesi (angka 30) ===== */
+.durasi-sesi { width: 4rem !important; text-align: center; }
+@media (max-width: 760px) {
+  .sched-item { flex-wrap: wrap; }
+  .sched-item .sched-body { flex: 1 1 0; min-width: 0; }
+  .sched-item .actions { flex: 1 1 100%; justify-content: flex-end; }
+  .sched-item input.durasi-sesi {
+    width: 2.9rem !important;
+    padding: .3rem .2rem !important;
+    font-size: calc(14px / var(--ui-zoom)) !important;
+    border-radius: 10px;
+  }
+}
