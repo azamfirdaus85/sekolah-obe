@@ -1335,3 +1335,64 @@ html:not([data-theme="dark"]) .hero-banner .hero-emoji { opacity: 1 !important; 
     border-radius: 10px;
   }
 }
+
+/* ===== Lonceng notifikasi ===== */
+.btn.bell-btn{position:relative;overflow:visible;width:42px;height:42px;padding:0;display:inline-grid;place-items:center;border-radius:14px;color:#8a6a1c}
+.bell-btn .bell-ic{transform-origin:50% 8%}
+.bell-btn.has-new{background:linear-gradient(180deg,#fffaf0,#fbeec8);border-color:rgba(212,169,63,.55);color:#9a6f0c;box-shadow:0 6px 16px rgba(212,169,63,.28)}
+.bell-btn.has-new .bell-ic{animation:bellRing 2.6s ease-in-out infinite}
+@keyframes bellRing{0%,55%,100%{transform:rotate(0)}60%{transform:rotate(16deg)}66%{transform:rotate(-14deg)}72%{transform:rotate(10deg)}78%{transform:rotate(-8deg)}84%{transform:rotate(0)}}
+.bell-badge{position:absolute;top:-7px;right:-7px;z-index:2;min-width:20px;height:20px;padding:0 5px;border-radius:99px;
+  background:linear-gradient(135deg,#ff5a5f,#e11d48);color:#fff;font-size:.68rem;font-weight:800;line-height:20px;text-align:center;
+  border:2px solid #fff;box-shadow:0 3px 8px rgba(225,29,72,.45);animation:badgePop .35s cubic-bezier(.2,1.6,.4,1)}
+.bell-btn.has-new .bell-badge::after{content:"";position:absolute;inset:-4px;border-radius:99px;border:2px solid rgba(225,29,72,.5);animation:badgePulse 1.8s ease-out infinite}
+@keyframes badgePop{from{transform:scale(.3)}to{transform:scale(1)}}
+@keyframes badgePulse{0%{transform:scale(.8);opacity:.9}100%{transform:scale(1.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){.bell-btn.has-new .bell-ic,.bell-btn.has-new .bell-badge::after{animation:none}}
+
+.nt-title{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.nt-count{font-size:.7rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#d4af37,#aa771c);padding:.18rem .6rem;border-radius:99px}
+.nt-list{max-height:60vh;overflow:auto;min-width:min(440px,80vw);margin:.7rem 0;display:grid;gap:.5rem;padding:2px}
+.nt-item{display:flex;gap:.8rem;align-items:flex-start;padding:.75rem .85rem;border-radius:14px;text-decoration:none;color:inherit;
+  background:rgba(255,255,255,.7);border:1px solid rgba(212,169,63,.22);transition:transform .15s,box-shadow .15s,border-color .15s}
+.nt-item:hover{transform:translateY(-1px);border-color:rgba(212,169,63,.6);box-shadow:0 8px 20px rgba(184,138,28,.15)}
+.nt-item.new{background:linear-gradient(90deg,rgba(246,220,147,.4),rgba(255,255,255,.7));border-left:4px solid #d4af37}
+.nt-ic{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:1.25rem;background:linear-gradient(135deg,#fff6da,#f6dc93)}
+.nt-body{display:grid;gap:.1rem;min-width:0}
+.nt-body b{display:flex;align-items:center;gap:.4rem;font-size:.92rem}
+.nt-dot{width:8px;height:8px;border-radius:50%;background:#e11d48;display:inline-block}
+.nt-text{font-size:.84rem;overflow-wrap:anywhere}
+.nt-time{font-size:.72rem;color:var(--muted)}
+.nt-empty{text-align:center;padding:1.6rem 1rem;color:var(--muted)}
+.nt-empty span{font-size:2.4rem}
+html[data-theme="dark"] .btn.bell-btn{color:#e8c15e}
+html[data-theme="dark"] .bell-btn.has-new{background:rgba(212,169,63,.14);border-color:rgba(232,193,94,.5)}
+html[data-theme="dark"] .bell-badge{border-color:#0f1419}
+html[data-theme="dark"] .nt-item{background:rgba(255,255,255,.04);border-color:rgba(232,193,94,.2)}
+html[data-theme="dark"] .nt-item.new{background:linear-gradient(90deg,rgba(212,169,63,.2),rgba(255,255,255,.03))}
+html[data-theme="dark"] .nt-ic{background:rgba(212,169,63,.18)}
+
+/* ===== Materi & Tugas: kartu mata pelajaran ===== */
+.lms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
+a.lms-card{position:relative;display:block;padding:1.1rem 1.1rem 1rem;border-radius:20px;text-decoration:none;color:inherit;overflow:hidden;
+  background:linear-gradient(160deg,#fff 0%,#fffaf0 100%);border:1px solid rgba(212,169,63,.28);box-shadow:0 6px 18px rgba(120,90,20,.08);
+  transition:transform .18s,box-shadow .18s,border-color .18s}
+a.lms-card::before{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:var(--tone);opacity:.55}
+a.lms-card:hover{transform:translateY(-4px);box-shadow:0 16px 32px rgba(120,90,20,.18);border-color:var(--tone-d)}
+.lms-top{position:relative;display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem}
+.lms-ic{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;font-size:1.5rem;background:var(--tone);box-shadow:inset 0 0 0 1px rgba(255,255,255,.6),0 4px 10px rgba(0,0,0,.08)}
+.lms-go{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--tone-d);font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.1);transition:transform .18s}
+a.lms-card:hover .lms-go{transform:translateX(4px);background:var(--tone-d);color:#fff}
+a.lms-card h3{position:relative;margin:0 0 .25rem;font-size:1.08rem;color:var(--ink)}
+.lms-who{margin:0 0 .7rem;font-size:.86rem;color:#7a6a48}
+.lms-chips{display:flex;flex-wrap:wrap;gap:.4rem}
+.lms-chip{font-size:.74rem;font-weight:700;padding:.25rem .6rem;border-radius:99px;background:#fff;border:1px solid rgba(212,169,63,.3);color:#6b5420}
+.lms-chip.warn{background:#fff1f1;border-color:#fecaca;color:#b42318}
+.lms-sem{margin:.75rem 0 0;padding-top:.6rem;border-top:1px dashed rgba(212,169,63,.4);font-size:.76rem;color:var(--muted)}
+html[data-theme="dark"] a.lms-card{background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border-color:rgba(232,193,94,.22);box-shadow:none}
+html[data-theme="dark"] a.lms-card::before{opacity:.18}
+html[data-theme="dark"] a.lms-card h3{color:#f4ead2}
+html[data-theme="dark"] .lms-who{color:#bfae85}
+html[data-theme="dark"] .lms-chip{background:rgba(255,255,255,.06);color:#e8d9a8}
+html[data-theme="dark"] .lms-chip.warn{background:rgba(225,29,72,.16);border-color:rgba(251,113,133,.4);color:#fda4af}
+html[data-theme="dark"] .lms-go{background:rgba(255,255,255,.1)}

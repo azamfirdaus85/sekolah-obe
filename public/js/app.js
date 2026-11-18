@@ -290,7 +290,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
               <div id="gsBox" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:60;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.2);max-height:70vh;overflow:auto;min-width:min(340px,86vw)"></div>
             </div>
             <span class="who">${esc(me.name)}<em>${roleLabel(me.role)}</em></span>
-            <button class="btn sm ghost" data-action="bell" title="Notifikasi" style="position:relative">🔔<span id="bellCount" style="display:none;position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-size:.68rem;font-weight:700;line-height:18px;text-align:center"></span></button>
+            <button class="btn sm ghost bell-btn" data-action="bell" title="Notifikasi" aria-label="Notifikasi"><svg class="bell-ic" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span id="bellCount" class="bell-badge" style="display:none"></span></button>
             <button class="btn sm ghost top-act" data-action="pw">🔑 Ganti Password</button>
             <button class="btn sm top-act" data-action="logout">Keluar →</button>
           </header>
@@ -1420,13 +1420,28 @@ const QUICK_EXTRA = {
 
     if (!id) {
       const d = await api('/lms/teachings');
+      const mapelIcon = (n) => {
+        const x = String(n || '').toLowerCase();
+        const m = [['qur', '📖'], ['tulis', '✍️'], ['indonesia', '📚'], ['inggris', '🔤'], ['arab', '🕌'], ['biologi', '🧬'], ['fisika', '⚛️'], ['kimia', '🧪'],
+          ['matematika', '📐'], ['falak', '🌙'], ['kitab', '📜'], ['fiqih', '⚖️'], ['agama', '☪️'], ['sejarah', '🏛️'], ['geografi', '🌍'], ['ekonomi', '💹'],
+          ['sosiologi', '👥'], ['informatika', '💻'], ['komputer', '💻'], ['olahraga', '⚽'], ['pjok', '⚽'], ['seni', '🎨'], ['pkn', '🇮🇩'], ['pancasila', '🇮🇩']];
+        const hit = m.find(([k]) => x.includes(k));
+        return hit ? hit[1] : '📘';
+      };
+      const tones = [['#f6dc93', '#b8891c'], ['#c9e8d6', '#2f8f5b'], ['#cfe0f7', '#3b6fb6'], ['#f4cfd8', '#c0485f'], ['#ddd3f5', '#6d4fc2'], ['#fbd9b8', '#c46a1a']];
       const cards = d.rows.length
-        ? d.rows.map((t) => `<a class="card" href="#/lms/${t.id}"><h3>${esc(t.subject_name)}</h3>
-            <p class="muted">${guru ? esc(t.class_name) : esc(t.teacher_name)}</p>
-            <p class="muted small">${t.materials} materi &bull; ${t.tasks} tugas${!guru && t.pending ? ` &bull; <b>${t.pending} belum dikumpulkan</b>` : ''}</p>
-            <p class="muted small">${esc(t.semester)}</p></a>`).join('')
+        ? d.rows.map((t, i) => {
+            const tone = tones[i % tones.length];
+            const pend = !guru && t.pending ? `<span class="lms-chip warn">⏳ ${t.pending} belum dikumpulkan</span>` : '';
+            return `<a class="lms-card" href="#/lms/${t.id}" style="--tone:${tone[0]};--tone-d:${tone[1]}">
+              <div class="lms-top"><span class="lms-ic">${mapelIcon(t.subject_name)}</span><span class="lms-go">&rarr;</span></div>
+              <h3>${esc(t.subject_name)}</h3>
+              <p class="lms-who">${guru ? '🏫 ' + esc(t.class_name) : '👤 ' + esc(t.teacher_name)}</p>
+              <div class="lms-chips"><span class="lms-chip">📚 ${t.materials} materi</span><span class="lms-chip">📝 ${t.tasks} tugas</span>${pend}</div>
+              <p class="lms-sem">${esc(t.semester)}</p></a>`;
+          }).join('')
         : `<p class="muted">${guru ? 'Belum ada kelas ajar. Hubungi admin.' : 'Belum ada mata pelajaran untuk kelas Anda.'}</p>`;
-      return `<h1>Materi & Tugas</h1><div class="grid2">${cards}</div>`;
+      return `<h1>Materi & Tugas</h1><p class="muted" style="margin:-.3rem 0 1rem">${guru ? 'Pilih kelas untuk membagikan materi dan tugas.' : 'Pilih mata pelajaran untuk membuka materi dan mengumpulkan tugas.'}</p><div class="lms-grid">${cards}</div>`;
     }
 
     // Guru: daftar pengumpulan satu tugas
@@ -1654,6 +1669,8 @@ const QUICK_EXTRA = {
     const n = notifCache.unread || 0;
     b.textContent = n > 99 ? '99+' : String(n);
     b.style.display = n > 0 ? 'block' : 'none';
+    const btn = b.closest('.bell-btn');
+    if (btn) btn.classList.toggle('has-new', n > 0);
   }
 
   let lastBellAt = 0;
@@ -1667,16 +1684,34 @@ const QUICK_EXTRA = {
     } catch (e) {}
   }
 
-  async function openBell() {
-    await refreshBell(true);
+  function bellHtml() {
     const list = notifCache.items.length
-      ? notifCache.items.map((n) => `<a href="${esc(n.link)}" data-action="closeModal" style="display:block;padding:.6rem .5rem;border-bottom:1px solid rgba(100,116,139,.25);text-decoration:none;color:inherit;${n.unread ? 'background:rgba(99,102,241,.08);' : ''}">
-          <div style="display:flex;gap:.6rem;align-items:flex-start"><span style="font-size:1.2rem">${n.icon}</span>
-          <div style="min-width:0"><b>${esc(n.title)}</b>${n.unread ? ' <span class="pill info">Baru</span>' : ''}<br>
-          <span class="small">${esc(n.text)}</span><br><span class="muted small">${esc(ago(n.at))}</span></div></div></a>`).join('')
-      : '<p class="muted">Belum ada notifikasi.</p>';
-    openModal(`<h2>🔔 Notifikasi</h2><div style="max-height:60vh;overflow:auto;min-width:min(420px,80vw);margin:.6rem 0">${list}</div>
-      <div class="actions"><button class="btn ghost" data-action="closeModal">Tutup</button></div>`);
+      ? notifCache.items.map((n) => `<a class="nt-item${n.unread ? ' new' : ''}" href="${esc(n.link)}" data-action="closeModal">
+          <span class="nt-ic">${n.icon}</span>
+          <span class="nt-body"><b>${esc(n.title)}${n.unread ? ' <i class="nt-dot"></i>' : ''}</b>
+          <span class="nt-text">${esc(n.text)}</span><span class="nt-time">${esc(ago(n.at))}</span></span></a>`).join('')
+      : '<div class="nt-empty"><span>🔕</span><p>Belum ada notifikasi.</p></div>';
+    return `<h2 class="nt-title">🔔 Notifikasi${notifCache.unread ? ` <span class="nt-count">${notifCache.unread} baru</span>` : ''}</h2>
+      <div class="nt-list">${list}</div>
+      <div class="actions"><button class="btn ghost" data-action="closeModal">Tutup</button></div>`;
+  }
+
+  // Modal dibuka langsung dari data yang sudah ada (tanpa menunggu server), lalu disegarkan di belakang layar.
+  async function openBell() {
+    const hadUnread = notifCache.unread > 0;
+    openModal(bellHtml());
+    const before = JSON.stringify(notifCache.items);
+    await refreshBell(true);
+    if (JSON.stringify(notifCache.items) !== before || hadUnread !== notifCache.unread > 0) {
+      const list = document.querySelector('.nt-list');
+      if (list) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = bellHtml();
+        list.innerHTML = tmp.querySelector('.nt-list').innerHTML;
+        const t = document.querySelector('.nt-title');
+        if (t) t.innerHTML = tmp.querySelector('.nt-title').innerHTML;
+      }
+    }
     if (notifCache.unread > 0) {
       api('/notif/read', 'POST', {}).then(() => { notifCache.unread = 0; paintBell(); }).catch(() => {});
     }
