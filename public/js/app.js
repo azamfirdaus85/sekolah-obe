@@ -708,10 +708,24 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
 
   async function myClasses() {
     const list = await api('/guru/teaching');
+    const icon = (n) => {
+      const x = String(n || '').toLowerCase();
+      const m = [['qur', '📖'], ['tulis', '✍️'], ['indonesia', '📚'], ['inggris', '🔤'], ['arab', '🕌'], ['biologi', '🧬'], ['fisika', '⚛️'], ['kimia', '🧪'],
+        ['matematika', '📐'], ['falak', '🌙'], ['kitab', '📜'], ['fiqih', '⚖️'], ['agama', '☪️'], ['sejarah', '🏛️'], ['geografi', '🌍'], ['ekonomi', '💹'],
+        ['sosiologi', '👥'], ['informatika', '💻'], ['komputer', '💻'], ['olahraga', '⚽'], ['pjok', '⚽'], ['seni', '🎨'], ['pkn', '🇮🇩'], ['pancasila', '🇮🇩']];
+      const hit = m.find(([k]) => x.includes(k));
+      return hit ? hit[1] : '📘';
+    };
+    const tones = [['#f6dc93', '#b8891c'], ['#c9e8d6', '#2f8f5b'], ['#cfe0f7', '#3b6fb6'], ['#f4cfd8', '#c0485f'], ['#ddd3f5', '#6d4fc2'], ['#fbd9b8', '#c46a1a']];
     const cards = list.length
-      ? list.map((t) => `<a class="card" href="#/class/${t.id}/cp"><h3>${esc(t.subject_name)}</h3><p class="muted">${esc(t.class_name)} &bull; ${t.students} siswa</p><p class="muted small">${esc(t.semester)}</p></a>`).join('')
+      ? list.map((t, i) => `<a class="lms-card" href="#/class/${t.id}/cp" style="--tone:${tones[i % tones.length][0]};--tone-d:${tones[i % tones.length][1]}">
+          <div class="lms-top"><span class="lms-ic">${icon(t.subject_name)}</span><span class="lms-go">&rarr;</span></div>
+          <h3>${esc(t.subject_name)}</h3>
+          <p class="lms-who">🏫 ${esc(t.class_name)}</p>
+          <div class="lms-chips"><span class="lms-chip">👥 ${t.students} siswa</span></div>
+          <p class="lms-sem">${esc(t.semester)}</p></a>`).join('')
       : '<p class="muted">Belum ada kelas ajar. Hubungi admin.</p>';
-    return `<h1>Kelas Ajar Saya</h1><div class="grid2">${cards}</div>`;
+    return `<h1>Kelas Ajar Saya</h1><p class="muted" style="margin:-.3rem 0 1rem">Pilih kelas untuk mengelola CP, penilaian, dan capaian siswa.</p><div class="lms-grid">${cards}</div>`;
   }
 
   async function classDetail(id, tab = 'cp', extra) {
