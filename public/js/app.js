@@ -383,6 +383,51 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     return `<div class="card">${judul}<p class="muted small" style="margin-top:-.5rem;margin-bottom:.8rem">Tiap jam pelajaran punya sesi sendiri, jadi satu kelas bisa diabsen dua kali atau lebih dalam sehari.</p>${rows}</div>`;
   }
 
+  // Dashboard guru: absensi diri sendiri (masuk, pulang, izin/sakit/dinas) tanpa pindah halaman.
+  // Memakai endpoint yang sama dengan menu Absensi > Absensi Saya.
+  async function guruStafCard() {
+    const d = await api('/absensi/staf/saya');
+    const t = d.today;
+    const canIn = !t || !t.check_in;
+    const canOut = !!(t && t.check_in && !t.check_out);
+
+    let status;
+    if (!t) {
+      status = '<span class="pill na">Belum absen</span> <span class="muted small">Silakan absen masuk saat tiba di sekolah.</span>';
+    } else if (t.check_out) {
+      status = `<span class="pill ok">Selesai</span> Masuk <b>${esc(t.check_in)}</b> &bull; Pulang <b>${esc(t.check_out)}</b>`;
+    } else if (t.check_in) {
+      status = `<span class="pill ok">Sudah absen masuk</span> Masuk <b>${esc(t.check_in)}</b> <span class="muted small">&bull; jangan lupa absen pulang.</span>`;
+    } else {
+      status = `${statusPill(t.status)}${t.note ? ` <span class="muted small">${esc(t.note)}</span>` : ''}`;
+    }
+
+    const doneStyle = 'style="opacity:.75;cursor:default"';
+    const btnIn = canIn
+      ? '<button class="btn" data-action="staffIn">🙋 Absen Masuk</button>'
+      : `<button class="btn" disabled ${doneStyle}>✅ Sudah Absen Masuk</button>`;
+    const btnOut = canOut
+      ? '<button class="btn ghost" data-action="staffOut">🏠 Absen Pulang</button>'
+      : t && t.check_out
+        ? `<button class="btn ghost" disabled ${doneStyle}>✅ Sudah Absen Pulang</button>`
+        : '<button class="btn ghost" disabled>🏠 Absen Pulang</button>';
+
+    const leave = canIn
+      ? `<details style="margin-top:.9rem"><summary class="muted small" style="cursor:pointer">Tidak masuk hari ini? Isi izin / sakit / dinas</summary>
+          <form class="form inline" data-form="staffLeave" style="margin-top:.7rem">
+            <div class="field"><label>Keterangan</label><select name="status"><option value="izin">Izin</option><option value="sakit">Sakit</option><option value="dinas">Dinas luar</option></select></div>
+            <div class="field"><label>Catatan (opsional)</label><input name="note" maxlength="200"></div>
+            <button class="btn" type="submit">Simpan</button>
+          </form></details>`
+      : '';
+
+    return `<div class="card"><h2>🙋 Absensi Saya</h2>
+      <p class="muted small" style="margin-top:-.5rem;margin-bottom:.8rem">${fday(d.date)} &bull; sekarang ${esc(nowJkt())} WIB</p>
+      <p style="margin-bottom:.9rem">${status}</p>
+      <div class="actions">${btnIn}${btnOut}<a class="btn sm ghost" href="#/absen/saya">Riwayat</a></div>
+      ${leave}</div>`;
+  }
+
   async function dash() {
     // Semua permintaan dijalankan bersamaan supaya dashboard cepat muncul
     const adminP = me.role === 'admin' ? Promise.all([api('/admin/stats'), api('/admin/periods/active').catch(() => null)]) : null;
@@ -390,6 +435,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
     const sesiP = me.role === 'siswa'
       ? Promise.all([api('/absensi/siswa/sesi-aktif').catch(() => null), api('/absensi/siswa/saya').catch(() => null)])
       : null;
+    const stafP = me.role === 'guru' ? guruStafCard().catch(() => '') : null;
     const [news, ring, grafik] = await Promise.all([api('/announcements'), api('/dashboard/ringkasan').catch(() => null), api('/dashboard/grafik').catch(() => null)]);
     let stats = '';
     if (me.role === 'admin') {
@@ -414,6 +460,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
       : '<p class="muted">Belum ada pengumuman.</p>';
     const home = homeHtml(ring) + chartsHtml(grafik);
     const guruAbsen = me.role === 'guru' ? await guruAbsenHariIni(ring).catch(() => '') : '';
+    const guruStaf = stafP ? await stafP : '';
 
     // Kartu absen masuk di dashboard siswa: memakai sesi yang dibuka guru (absensi mandiri)
     let absenCard = '';
@@ -435,6 +482,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         <span class="hero-emoji" style="font-size:3.5rem;opacity:.9">🎓</span>
       </div>
       ${stats}
+      ${guruStaf}
       ${guruAbsen}
       ${absenCard}
       ${home}
@@ -3450,18 +3498,28 @@ async verifikasiBuktiSPP(el) {
 
     // ---------- Absensi ----------
 
-    async staffIn() {
-      // TEBAKAN: POST /absensi/staf/masuk
-      await api('/absensi/staf/masuk', 'POST', {});
-      toast('Absen masuk tercatat');
-      route();
+    async staffIn(el) {
+      if (el) el.disabled = true;
+      try {
+        await api('/absensi/staf/masuk', 'POST', {});
+        toast('Absen masuk tercatat');
+        route();
+      } catch (e) {
+        if (el) el.disabled = false;
+        throw e;
+      }
     },
 
-    async staffOut() {
-      // TEBAKAN: POST /absensi/staf/pulang
-      await api('/absensi/staf/pulang', 'POST', {});
-      toast('Absen pulang tercatat');
-      route();
+    async staffOut(el) {
+      if (el) el.disabled = true;
+      try {
+        await api('/absensi/staf/pulang', 'POST', {});
+        toast('Absen pulang tercatat');
+        route();
+      } catch (e) {
+        if (el) el.disabled = false;
+        throw e;
+      }
     },
 
     allHadir() {
