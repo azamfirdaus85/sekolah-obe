@@ -4430,4 +4430,21 @@ async cetakInvoiceSPP(el) {
     }
   })();
 
+  // Warna bilah judul / status bar aplikasi terpasang mengikuti tema (terang = krem emas, gelap = gelap).
+  (function themeColorSync() {
+    const LIGHT = '#f6e3a8', DARK = '#0b1220';
+    const apply = () => {
+      try {
+        let m = document.querySelector('meta[name="theme-color"]:not([media])');
+        document.querySelectorAll('meta[name="theme-color"][media]').forEach((x) => x.remove());
+        if (!m) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
+        const t = document.documentElement.getAttribute('data-theme');
+        const dark = t ? t === 'dark' : window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+        m.setAttribute('content', dark ? DARK : LIGHT);
+      } catch (_) {}
+    };
+    apply();
+    try { new MutationObserver(apply).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (_) {}
+  })();
+
 })();
