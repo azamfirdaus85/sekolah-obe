@@ -1396,3 +1396,50 @@ html[data-theme="dark"] .lms-who{color:#bfae85}
 html[data-theme="dark"] .lms-chip{background:rgba(255,255,255,.06);color:#e8d9a8}
 html[data-theme="dark"] .lms-chip.warn{background:rgba(225,29,72,.16);border-color:rgba(251,113,133,.4);color:#fda4af}
 html[data-theme="dark"] .lms-go{background:rgba(255,255,255,.1)}
+
+/* ===== Nilai & Capaian ===== */
+.rp-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.rp-who{display:flex;align-items:center;gap:.9rem}
+.rp-who h1{margin:0}
+.rp-who p{margin:.1rem 0 0}
+.rp-av{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;font-size:1.5rem;font-weight:800;color:#5a3f06;background:linear-gradient(135deg,#f6dc93,#d4af37);box-shadow:0 6px 16px rgba(184,138,28,.3)}
+.rp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.9rem;margin-bottom:1.2rem}
+.rp-stat{display:grid;grid-template-columns:auto 1fr;column-gap:.8rem;align-items:center;padding:1rem 1.1rem;border-radius:18px;background:linear-gradient(160deg,#fff,#fffaf0);border:1px solid rgba(212,169,63,.28);box-shadow:0 4px 14px rgba(120,90,20,.07)}
+.rp-stat span{grid-row:span 2;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:1.3rem;background:linear-gradient(135deg,#fff6da,#f6dc93)}
+.rp-stat b{font-size:1.6rem;line-height:1.1;color:var(--ink)}
+.rp-stat small{color:var(--muted);font-weight:600}
+.rp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem;align-items:start}
+.rp-card{position:relative;padding:1.1rem 1.1rem 1rem;border-radius:20px;overflow:hidden;background:linear-gradient(160deg,#fff,#fffaf0);border:1px solid rgba(212,169,63,.28);box-shadow:0 6px 18px rgba(120,90,20,.08)}
+.rp-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--tone-d)}
+.rp-card-top{display:flex;align-items:center;gap:.8rem}
+.rp-card .lms-ic{flex:none;background:var(--tone)}
+.rp-title{flex:1;min-width:0}
+.rp-title h3{margin:0;font-size:1.05rem;color:var(--ink)}
+.rp-title p{margin:.1rem 0 0}
+.rp-final{text-align:center;padding:.35rem .8rem;border-radius:14px;background:var(--tone)}
+.rp-final b{display:block;font-size:1.35rem;line-height:1.1;color:#2c2416}
+.rp-final small{font-size:.66rem;font-weight:700;color:#6b5420;text-transform:uppercase;letter-spacing:.04em}
+.rp-status{margin:.7rem 0 .4rem}
+.rp-cps{display:grid;gap:.5rem}
+.rp-cp{padding:.6rem .75rem;border-radius:12px;background:rgba(255,255,255,.75);border:1px dashed rgba(212,169,63,.4)}
+.rp-cp-top{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+.rp-cp p{margin:.3rem 0 0;font-size:.84rem;color:#6b5a38}
+.rp-empty{padding:.4rem 0}
+html[data-theme="dark"] .rp-stat,html[data-theme="dark"] .rp-card{background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border-color:rgba(232,193,94,.22);box-shadow:none}
+html[data-theme="dark"] .rp-stat b,html[data-theme="dark"] .rp-title h3{color:#f4ead2}
+html[data-theme="dark"] .rp-stat span,html[data-theme="dark"] .rp-final{background:rgba(212,169,63,.18)}
+html[data-theme="dark"] .rp-final b{color:#f4ead2}
+html[data-theme="dark"] .rp-final small{color:#e8d9a8}
+html[data-theme="dark"] .rp-cp{background:rgba(255,255,255,.04)}
+html[data-theme="dark"] .rp-cp p{color:#bfae85}
+@media (max-width:760px){.rp-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* ===== Performa scroll ===== */
+/* blur belakang header sticky dihitung ulang setiap frame scroll: diganti warna solid */
+.top{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;background:rgba(255,254,251,.97)}
+html[data-theme="dark"] .top{background:rgba(15,20,25,.97)}
+@media (max-width:760px){*{-webkit-backdrop-filter:none !important;backdrop-filter:none !important}}
+/* kartu di luar layar tidak ikut digambar */
+.main .content .card,.lms-card,.rp-card{content-visibility:auto;contain-intrinsic-size:auto 220px}
+.side{will-change:transform;contain:layout paint}
+.btn,.card button:not([class]){transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease}

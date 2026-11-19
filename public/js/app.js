@@ -19,7 +19,22 @@
   };
 const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek: 'Kepala Sekolah', orang_tua: 'Orang Tua/Wali' }[r] || r);
 
+  // Cache singkat untuk halaman berat yang jarang berubah (dikosongkan setiap ada perubahan data).
+  const GET_CACHE_OK = ['/siswa/report', '/guru/teaching', '/lms/teachings', '/monitor/overview'];
+  const getCache = new Map();
   async function api(path, method = 'GET', body) {
+    if (method !== 'GET') getCache.clear();
+    else if (GET_CACHE_OK.some((p) => path === p)) {
+      const hit = getCache.get(path);
+      if (hit && Date.now() - hit.at < 20000) return hit.p;
+      const p = apiRaw(path, method, body);
+      getCache.set(path, { at: Date.now(), p });
+      p.catch(() => getCache.delete(path));
+      return p;
+    }
+    return apiRaw(path, method, body);
+  }
+  async function apiRaw(path, method = 'GET', body) {
     const opt = { method, headers: {}, credentials: 'same-origin' };
     if (body !== undefined) {
       opt.headers['Content-Type'] = 'application/json';
@@ -777,15 +792,47 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
 
   async function reportView() {
     const r = await api('/siswa/report');
-    const head = `<h1>Nilai & Capaian</h1><p><button class="btn" data-action="bukaRapor" data-url="/siswa/rapor">🖨️ Cetak E-Rapor</button></p><p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')} &bull; KKM ${r.kkm}</p>`;
+    const done = r.subjects.filter((x) => x.final != null);
+    const avg = done.length ? done.reduce((a, x) => a + Number(x.final), 0) / done.length : null;
+    const tuntas = done.filter((x) => x.passed).length;
+    const head = `<div class="rp-head">
+        <div class="rp-who"><span class="rp-av">${esc((me.name || '?').trim().charAt(0).toUpperCase())}</span>
+          <div><h1>Nilai & Capaian</h1>
+          <p class="muted">${esc(me.name)} &bull; NIS ${esc(r.student.nis)} &bull; Kelas ${esc(r.student.class_name || '-')}</p></div></div>
+        <button class="btn" data-action="bukaRapor" data-url="/siswa/rapor">🖨️ Cetak E-Rapor</button>
+      </div>
+      <div class="rp-stats">
+        <div class="rp-stat"><span>📊</span><b>${avg == null ? '-' : fmt(avg)}</b><small>Rata-rata nilai akhir</small></div>
+        <div class="rp-stat"><span>✅</span><b>${tuntas}/${r.subjects.length}</b><small>Mapel tuntas</small></div>
+        <div class="rp-stat"><span>🎯</span><b>${r.kkm}</b><small>KKM</small></div>
+      </div>`;
     return head + reportCards(r);
   }
 
   // Kartu nilai per mata pelajaran (dipakai halaman siswa dan portal orang tua)
   function reportCards(r) {
     if (!r.subjects.length) return '<div class="card"><p class="muted">Belum ada mata pelajaran.</p></div>';
-    return r.subjects.map((s) => `<div class="card"><h2>${esc(s.subject)} - ${esc(s.teacher)}</h2><p>Nilai akhir: <b>${fmt(s.final)}</b> ${pill(s.passed)}</p>
-      <table><thead><tr><th>CP</th><th>Deskripsi</th><th>Capaian</th></tr></thead><tbody>${s.outcomes.map((o) => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.description)}</td><td>${bar(o.score, r.kkm)}</td></tr>`).join('')}</tbody></table></div>`).join('');
+    const icon = (n) => {
+      const x = String(n || '').toLowerCase();
+      const m = [['qur', '📖'], ['tulis', '✍️'], ['indonesia', '📚'], ['inggris', '🔤'], ['arab', '🕌'], ['biologi', '🧬'], ['fisika', '⚛️'], ['kimia', '🧪'],
+        ['matematika', '📐'], ['falak', '🌙'], ['kitab', '📜'], ['fiqih', '⚖️'], ['agama', '☪️'], ['sejarah', '🏛️'], ['geografi', '🌍'], ['ekonomi', '💹'],
+        ['informatika', '💻'], ['komputer', '💻'], ['olahraga', '⚽'], ['pjok', '⚽'], ['seni', '🎨'], ['pkn', '🇮🇩']];
+      const hit = m.find(([k]) => x.includes(k));
+      return hit ? hit[1] : '📘';
+    };
+    const tones = [['#f6dc93', '#b8891c'], ['#c9e8d6', '#2f8f5b'], ['#cfe0f7', '#3b6fb6'], ['#f4cfd8', '#c0485f'], ['#ddd3f5', '#6d4fc2'], ['#fbd9b8', '#c46a1a']];
+    return '<div class="rp-grid">' + r.subjects.map((s, i) => {
+      const t = tones[i % tones.length];
+      const cp = s.outcomes.length
+        ? s.outcomes.map((o) => `<div class="rp-cp"><div class="rp-cp-top"><b>${esc(o.code)}</b>${bar(o.score, r.kkm)}</div><p>${esc(o.description)}</p></div>`).join('')
+        : '<p class="muted small rp-empty">Belum ada capaian pembelajaran.</p>';
+      return `<div class="rp-card" style="--tone:${t[0]};--tone-d:${t[1]}">
+        <div class="rp-card-top"><span class="lms-ic">${icon(s.subject)}</span>
+          <div class="rp-title"><h3>${esc(s.subject)}</h3><p class="muted small">👤 ${esc(s.teacher)}</p></div>
+          <div class="rp-final"><b>${fmt(s.final)}</b><small>Nilai akhir</small></div></div>
+        <div class="rp-status">${pill(s.passed)}</div>
+        <div class="rp-cps">${cp}</div></div>`;
+    }).join('') + '</div>';
   }
 
   async function monitorView() {
