@@ -1443,3 +1443,15 @@ html[data-theme="dark"] .top{background:rgba(15,20,25,.97)}
 .main .content .card,.lms-card,.rp-card{content-visibility:auto;contain-intrinsic-size:auto 220px}
 .side{will-change:transform;contain:layout paint}
 .btn,.card button:not([class]){transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease}
+
+/* ===== Tombol menu (burger) ===== */
+.burger{position:relative;color:#7a5a12;border:1px solid rgba(212,169,63,.55) !important;
+  background:linear-gradient(145deg,#fffaf0,#f6dc93) !important;
+  box-shadow:0 6px 16px rgba(184,138,28,.28),inset 0 1px 0 rgba(255,255,255,.8);
+  transition:transform .15s ease,box-shadow .15s ease}
+.burger svg{display:block;pointer-events:none}
+.burger .b2{transition:d .2s ease}
+.burger:hover{box-shadow:0 8px 20px rgba(184,138,28,.4)}
+.burger:active{transform:scale(.92)}
+.burger:hover .b2{d:path("M4 12h16")}
+html[data-theme="dark"] .burger{color:#f2d27a;background:linear-gradient(145deg,#1a2438,#131c2e) !important;border-color:rgba(232,193,94,.5) !important;box-shadow:0 6px 16px rgba(0,0,0,.35)}

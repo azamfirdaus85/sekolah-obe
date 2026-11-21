@@ -299,7 +299,7 @@ const roleLabel = (r) => ({ admin: 'Admin', guru: 'Guru', siswa: 'Siswa', kepsek
         </aside>
         <div class="main">
           <header class="top">
-            <button class="burger" data-action="toggleSide">☰</button>
+            <button class="burger" data-action="toggleSide" aria-label="Buka menu"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path class="b1" d="M4 7h16"/><path class="b2" d="M4 12h12"/><path class="b3" d="M4 17h16"/></svg></button>
             <div id="gsWrap" style="position:relative;flex:1 1 220px;max-width:360px;min-width:0">
               <input id="gsInput" type="search" placeholder="🔍 Cari siswa, kelas, mapel, pengumuman..." autocomplete="off" maxlength="40" aria-label="Pencarian global" style="width:100%;padding:.5rem .8rem;border-radius:10px;border:1px solid rgba(100,116,139,.4);background:rgba(100,116,139,.1);color:inherit;font:inherit;font-size:.85rem">
               <div id="gsBox" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:60;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.2);max-height:70vh;overflow:auto;min-width:min(340px,86vw)"></div>
