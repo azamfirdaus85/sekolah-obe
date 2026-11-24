@@ -2745,10 +2745,10 @@ async function keuanganView() {
     const hasShell = !!(document.getElementById('side') && document.querySelector('main.content'));
     const navigating = location.hash !== lastHash;
     if (!hasShell) {
-      app.innerHTML = layout('<div class="loading">⏳ Memuat...</div>', active);
+      app.innerHTML = layout('<div class="loading" style="min-height:40vh"></div>', active);
     } else if (navigating) {
       markActive(active);
-      document.querySelector('main.content').innerHTML = '<div class="loading">⏳ Memuat...</div>';
+      document.querySelector('main.content').innerHTML = '<div class="loading" style="min-height:40vh"></div>';
       window.scrollTo(0, 0);
     }
     lastHash = location.hash;
