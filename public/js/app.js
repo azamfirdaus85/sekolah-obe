@@ -1364,13 +1364,14 @@ const QUICK_EXTRA = {
         <button class="btn" type="submit" ${sesi && sesi.status === 'open' ? 'disabled' : ''}>Buka Sesi Absensi</button>
       </form><p class="muted small">Siswa di kelas ini dapat melakukan absensi mandiri selama sesi masih aktif.</p></div>`;
     const rows = d.rows
-      .map((r) => `<tr data-sid="${r.student_id}"><td>${esc(r.nis)}</td><td>${esc(r.name)}</td>
+      .map((r) => `<tr data-sid="${r.student_id}" data-srv="${esc(r.status || '')}"><td>${esc(r.nis)}</td><td>${esc(r.name)}${r.status ? ' <span class="abs-done" title="Sudah tercatat">✅</span>' : ''}</td>
         <td><select class="abs-status">${STATUS_SISWA.map((s) => `<option value="${s}" ${(r.status || 'hadir') === s ? 'selected' : ''}>${STATUS_LABEL[s]}</option>`).join('')}</select></td>
         <td><input class="abs-note" maxlength="200" placeholder="Keterangan" value="${esc(r.note || '')}"></td></tr>`)
       .join('');
     const belum = d.rows.length && d.rows.every((r) => !r.status);
     return head + tabs + picker + sesiHtml + `<div class="card"><h2>${esc(d.teaching.subject_name)} - ${esc(d.teaching.class_name)}</h2>
       <p class="muted small">${fday(d.date)}${belum ? ' &bull; Belum pernah diabsen, semua diisi Hadir secara default. Ubah yang tidak hadir lalu simpan.' : ''}</p>
+      ${d.rows.length ? `<p class="abs-live"><span class="live-dot"></span> Langsung: <b id="absCount">${d.rows.filter((r) => r.status).length}</b> / ${d.rows.length} siswa sudah tercatat</p>` : ''}
       ${d.rows.length ? `<form data-form="saveAbsen" data-tid="${d.teaching.id}" data-date="${esc(d.date)}">
         <div class="table-wrap"><table><thead><tr><th>NIS</th><th>Nama</th><th>Status</th><th>Keterangan</th></tr></thead><tbody>${rows}</tbody></table></div>
         <div class="actions" style="margin-top:1rem"><button class="btn ghost" type="button" data-action="allHadir">Semua Hadir</button><button class="btn" type="submit">Simpan Absensi</button></div></form>`
@@ -1427,7 +1428,7 @@ const QUICK_EXTRA = {
     return head + tabs + `<div class="card"><form class="form inline" data-form="absenPantauPick">
         <div class="field"><label>Tanggal</label><input name="date" type="date" value="${esc(d.date)}" required></div>
         <button class="btn" type="submit">Tampilkan</button></form></div>
-      <p class="muted">${fday(d.date)}</p>
+      <p class="muted" data-live="pantau" data-date="${esc(d.date)}">${fday(d.date)}${d.date === todayJkt() ? ' <span class="abs-live"><span class="live-dot"></span> Diperbarui otomatis</span>' : ''}</p>
       <div class="cards">${statCard('Guru hadir', guruHadir + ' / ' + d.guru.length)}${statCard('Siswa hadir (catatan)', sum.hadir)}${statCard('Izin + Sakit', sum.izin + sum.sakit)}${statCard('Alpa', sum.alpa)}</div>
       ${staffTable('Absensi Guru', d.guru, 'Belum ada guru.')}
       ${staffTable('Absensi Kepala Sekolah', d.kepsek, 'Belum ada akun kepala sekolah.')}
@@ -2869,6 +2870,14 @@ async function keuanganView() {
         records
       });
 
+      f.querySelectorAll('tr[data-sid]').forEach((tr) => {
+        tr.dataset.srv = tr.querySelector('.abs-status').value;
+        delete tr.dataset.dirty;
+        const td = tr.children[1];
+        if (td && !td.querySelector('.abs-done')) td.insertAdjacentHTML('beforeend', ' <span class="abs-done" title="Sudah tercatat">✅</span>');
+      });
+      const cnt = document.getElementById('absCount');
+      if (cnt) cnt.textContent = f.querySelectorAll('.abs-done').length;
       toast('Absensi tersimpan');
     },
 
@@ -4502,6 +4511,84 @@ async cetakInvoiceSPP(el) {
     const insideMenu = e.target.closest('#side');
     const onBurger = e.target.closest('.burger');
     if (e.target.closest('#side nav a') || (!insideMenu && !onBurger)) side.classList.remove('open');
+  });
+
+  // ================= PEMANTAUAN LANGSUNG (polling) =================
+  // Siswa absen -> muncul di halaman guru; guru absen -> muncul di halaman kepala sekolah.
+  // Vercel tidak mendukung koneksi permanen, jadi data diperiksa tiap beberapa detik
+  // (hanya saat tab terlihat dan hanya di halaman yang memerlukannya).
+  const LIVE_MS = 6000;
+  let liveBusy = false;
+  let pantauPrev = null;
+
+  async function liveGuru(form) {
+    const tid = form.dataset.tid, date = form.dataset.date;
+    const d = await api(`/absensi/guru/siswa?teaching_id=${tid}&date=${date}`);
+    if (!document.body.contains(form)) return;
+    let masuk = 0;
+    d.rows.forEach((r) => {
+      const tr = form.querySelector(`tr[data-sid="${r.student_id}"]`);
+      if (!tr || !r.status) return;
+      masuk++;
+      if (tr.dataset.srv === r.status) return;
+      const baru = !tr.dataset.srv;
+      tr.dataset.srv = r.status;
+      if (tr.dataset.dirty) return; // jangan menimpa ketikan guru yang belum disimpan
+      tr.querySelector('.abs-status').value = r.status;
+      tr.querySelector('.abs-note').value = r.note || '';
+      const td = tr.children[1];
+      if (td && !td.querySelector('.abs-done')) td.insertAdjacentHTML('beforeend', ' <span class="abs-done" title="Sudah tercatat">✅</span>');
+      tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash');
+      if (baru) toast(`✅ ${r.name} baru saja absen (${STATUS_LABEL[r.status] || r.status})`);
+    });
+    const cnt = document.getElementById('absCount');
+    if (cnt) cnt.textContent = masuk;
+  }
+
+  async function livePantau(el) {
+    const date = el.dataset.date;
+    if (date !== todayJkt()) return;
+    const d = await api(`/absensi/pantau/hari?date=${date}`);
+    if (!document.body.contains(el)) return;
+    const sig = JSON.stringify([d.guru, d.kepsek, d.kelas, d.tidak_hadir]);
+    const map = {};
+    [...d.guru, ...d.kepsek].forEach((g) => { map[g.name] = g; });
+    if (pantauPrev && pantauPrev.sig !== sig) {
+      Object.keys(map).forEach((n) => {
+        const a = map[n], b = pantauPrev.map[n] || {};
+        if (a.check_in && a.check_in !== b.check_in) toast(`🙋 ${n} absen masuk ${a.check_in}`);
+        else if (a.check_out && a.check_out !== b.check_out) toast(`🏠 ${n} absen pulang ${a.check_out}`);
+        else if (a.status !== b.status && a.status) toast(`📋 ${n}: ${STATUS_LABEL[a.status] || a.status}`);
+      });
+      const y = window.scrollY;
+      await route();
+      window.scrollTo(0, y);
+    }
+    pantauPrev = { sig, map };
+  }
+
+  async function liveTick() {
+    if (liveBusy || document.hidden || !me) return;
+    const form = document.querySelector('form[data-form="saveAbsen"]');
+    const pan = document.querySelector('[data-live="pantau"]');
+    if (!pan) pantauPrev = null;
+    if (!form && !pan) return;
+    liveBusy = true;
+    try {
+      if (form) await liveGuru(form);
+      if (pan) await livePantau(pan);
+    } catch (e) { /* diam: coba lagi pada putaran berikutnya */ }
+    liveBusy = false;
+  }
+  setInterval(liveTick, LIVE_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); });
+  document.addEventListener('change', (e) => {
+    const tr = e.target.closest && e.target.closest('tr[data-sid]');
+    if (tr && e.target.closest('form[data-form="saveAbsen"]')) tr.dataset.dirty = '1';
+  });
+  document.addEventListener('input', (e) => {
+    const tr = e.target.closest && e.target.closest('tr[data-sid]');
+    if (tr && e.target.closest('form[data-form="saveAbsen"]')) tr.dataset.dirty = '1';
   });
 
   // ================= INISIALISASI =================

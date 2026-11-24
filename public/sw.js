@@ -2,7 +2,7 @@
    - Network-first: selalu ambil versi terbaru; cache hanya dipakai saat offline.
    - Data /api TIDAK PERNAH disimpan di cache (berisi data siswa/nilai/keuangan).
    Naikkan VERSION jika ingin memaksa cache lama dibersihkan. */
-const VERSION = 'siakad-v1';
+const VERSION = 'siakad-v2';
 const SHELL = [
   '/',
   '/css/style.css',
@@ -16,8 +16,8 @@ const SHELL = [
 
 const OFFLINE_HTML = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline - SIAKAD OBE</title>
-<style>body{font-family:system-ui,sans-serif;background:#4f46e5;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:1.5rem}
-button{margin-top:1rem;padding:.7rem 1.4rem;border:0;border-radius:10px;font-weight:700;background:#fff;color:#4f46e5;font-size:1rem}</style></head>
+<style>body{font-family:system-ui,sans-serif;background:#f6e3a8;color:#3a2a05;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:1.5rem}
+button{margin-top:1rem;padding:.7rem 1.4rem;border:0;border-radius:10px;font-weight:700;background:#3a2a05;color:#fff;font-size:1rem}</style></head>
 <body><div><h1>Anda sedang offline</h1><p>SIAKAD OBE membutuhkan koneksi internet untuk menampilkan data terbaru.</p>
 <button onclick="location.reload()">Coba Lagi</button></div></body></html>`;
 

@@ -19,7 +19,7 @@
   function applyTheme(theme, persist) {
     root.setAttribute('data-theme', theme);
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0b1120' : '#4f46e5');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0b1120' : '#f6e3a8');
     if (persist) { try { localStorage.setItem(KEY, theme); } catch (e) {} }
     paintButtons();
   }
@@ -56,13 +56,28 @@
 
   var deferredPrompt = null;
 
-  function makeInstallBtn() {
+  function isStandalone() {
+    return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  }
+  var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  function makeInstallBtn(help) {
     var b = document.createElement('button');
     b.type = 'button';
     b.id = 'installBtn';
+    if (help) b.setAttribute('data-help', '1');
     b.className = 'btn sm ghost';
     b.textContent = '📲 Pasang Aplikasi';
     return b;
+  }
+
+  // Cadangan: bila Chrome tidak memunculkan dialog pasang otomatis, tampilkan panduan manual
+  function showInstallHelp() {
+    var msg = isIOS
+      ? 'Di iPhone/iPad (Safari):\n1. Ketuk tombol Bagikan (kotak dengan panah ke atas).\n2. Pilih "Tambah ke Layar Utama".\n3. Ketuk "Tambah".'
+      : 'Di Android (Chrome):\n1. Ketuk menu ⋮ di pojok kanan atas.\n2. Pilih "Instal aplikasi" atau "Tambahkan ke layar utama".\n3. Ketuk "Instal".\n\nPastikan dibuka lewat Chrome, bukan browser di dalam WhatsApp/Instagram.';
+    alert(msg);
   }
 
   function ensure() {
@@ -78,12 +93,14 @@
         else top.appendChild(tb);
       }
       var ib = document.getElementById('installBtn');
-      if (deferredPrompt && !ib) {
-        var nb = makeInstallBtn();
+      var wantHelp = !deferredPrompt && isMobile && !isStandalone();
+      if (ib && ib.getAttribute('data-help') && !wantHelp) { ib.remove(); ib = null; }
+      if ((deferredPrompt || wantHelp) && !ib) {
+        var nb = makeInstallBtn(!deferredPrompt);
         var t = document.getElementById('themeBtn');
         if (t && t.nextSibling) top.insertBefore(nb, t.nextSibling);
         else top.appendChild(nb);
-      } else if (!deferredPrompt && ib) {
+      } else if (!deferredPrompt && !wantHelp && ib) {
         ib.remove();
       }
     } else {
@@ -109,6 +126,7 @@
     if (t) { e.preventDefault(); toggleTheme(); return; }
 
     var i = e.target.closest && e.target.closest('#installBtn');
+    if (i && !deferredPrompt) { e.preventDefault(); showInstallHelp(); return; }
     if (i && deferredPrompt) {
       e.preventDefault();
       deferredPrompt.prompt();
